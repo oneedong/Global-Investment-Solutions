@@ -1834,6 +1834,18 @@ body {
   justify-content: center;
 }
 
+/* LP 리스트(Contact 열) 가운데 정렬 */
+#institutions-detail-table th:nth-child(5),
+#institutions-detail-table td:nth-child(5) {
+	text-align: center;
+}
+#institutions-detail-table .contact-open-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0 auto;
+}
+
 /* 기관 연락처 모달 크기 확대 */
 #institution-contacts-modal .modal-content {
   width: 96vw;           /* 뷰포트 기준 거의 최대 */
