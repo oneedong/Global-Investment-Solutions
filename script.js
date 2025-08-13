@@ -1097,7 +1097,7 @@ function renderInstitutionsDashboard() {
     if (rows.length === 0) {
         detailTbody.innerHTML = `
             <tr>
-                <td colspan="5" class="empty-table">
+                <td colspan="6" class="empty-table">
                     <i class="fas fa-building"></i>
                     <h3>등록된 기관이 없습니다</h3>
                     <p>오른쪽 상단의 기관 추가 버튼으로 등록하세요.</p>
@@ -1117,6 +1117,9 @@ function renderInstitutionsDashboard() {
             </td>
             <td>
                 <input type="text" value="${inst.abbreviation || ''}" placeholder="영문 약어" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','abbreviation', this.value)">
+            </td>
+            <td>
+                <input type="text" value="${inst.address || ''}" placeholder="주소" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','address', this.value)">
             </td>
             <td>
                 <button class="add-institution-btn contact-open-btn" onclick="openInstitutionContactsDashboard('${inst.id}', '${(inst.name || '').replace(/'/g, "&#39;")}')">
@@ -1153,7 +1156,8 @@ function openAddInstitutionDialog() {
         id: generateId(),
         name: '',
         englishFullName: '',
-        abbreviation: ''
+        abbreviation: '',
+        address: ''
     };
     institutionsData[selectedInstitutionCategory] = institutionsData[selectedInstitutionCategory] || [];
     institutionsData[selectedInstitutionCategory].push(newInstitution);
@@ -1181,6 +1185,7 @@ function updateInstitutionField(category, institutionId, field, value) {
             // 필요시 개별 rfp에 대해 updateInstitutionDropdown이 호출되도록 렌더 갱신
         });
     }
+    syncDataToServer();
 }
 
 // GP 관리 함수들
