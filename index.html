@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Global Investment Solutions</title>
-    <link rel="stylesheet" href="styles.css?v=2025-08-12-01">
+    <link rel="stylesheet" href="styles.css?v=2025-08-13-01">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -374,88 +374,87 @@
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- 기관 연락처 모달 -->
-    <div id="institution-contacts-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="institution-contacts-title">기관 연락처</h3>
-                <span class="close" onclick="closeInstitutionContactsModal()">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div class="header-actions" style="justify-content: space-between; margin-bottom: 8px; align-items: center;">
-                    <button class="add-row-btn" id="dept-copy-open-btn" onclick="openDeptCopyModal()">
-                        <i class="fas fa-copy"></i> 부서별로
-                    </button>
-                    <button class="add-row-btn" onclick="addInstitutionContact()">
-                        <i class="fas fa-user-plus"></i> 연락처 추가
-                    </button>
+        <!-- 기관 연락처 모달 -->
+        <div id="institution-contacts-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="institution-contacts-title">기관 연락처</h3>
+                    <span class="close" onclick="closeInstitutionContactsModal()">&times;</span>
                 </div>
-                <div class="table-container">
-                    <table class="data-table" id="institution-contacts-table">
-                        <thead>
-                            <tr>
-                                <th class="number-col">No.</th>
-                                <th>부서명</th>
-                                <th>직급</th>
-                                <th>성함</th>
-                                <th>E-mail</th>
-                                <th>내선번호</th>
-                                <th>핸드폰</th>
-                                <th class="action-col">작업</th>
-                            </tr>
-                        </thead>
-                        <tbody id="institution-contacts-tbody"></tbody>
-                    </table>
+                <div class="modal-body">
+                    <div class="header-actions" style="justify-content: space-between; margin-bottom: 8px; align-items: center;">
+                        <button class="add-row-btn" id="dept-copy-open-btn" onclick="openDeptCopyModal()">
+                            <i class="fas fa-copy"></i> 부서별로
+                        </button>
+                        <button class="add-row-btn" onclick="addInstitutionContact()">
+                            <i class="fas fa-user-plus"></i> 연락처 추가
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="institution-contacts-table">
+                            <thead>
+                                <tr>
+                                    <th class="number-col">No.</th>
+                                    <th>부서명</th>
+                                    <th>직급</th>
+                                    <th>성함</th>
+                                    <th>E-mail</th>
+                                    <th>내선번호</th>
+                                    <th>핸드폰</th>
+                                    <th class="action-col">작업</th>
+                                </tr>
+                            </thead>
+                            <tbody id="institution-contacts-tbody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- 부서 선택 모달 -->
-    <div id="dept-email-modal" class="modal">
-        <div class="modal-content dept-modal">
-            <div class="modal-header">
-                <h3>부서 선택</h3>
-                <span class="close" onclick="closeDeptEmailModal()">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div id="dept-email-list" class="dept-actions"></div>
+        <!-- 부서 선택 모달 -->
+        <div id="dept-email-modal" class="modal">
+            <div class="modal-content dept-modal">
+                <div class="modal-header">
+                    <h3>부서 선택</h3>
+                    <span class="close" onclick="closeDeptEmailModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div id="dept-email-list" class="dept-actions"></div>
+                </div>
             </div>
         </div>
-    </div>
 
-    <!-- 주소 팝업 모달 -->
-    <div id="address-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>주소 편집</h3>
-                <span class="close" onclick="closeAddressModal()">&times;</span>
-            </div>
-            <div class="modal-body">
-                <form id="address-form">
-                    <div class="form-group">
-                        <label for="address-korean">한글 주소:</label>
-                        <textarea id="address-korean" rows="3" cols="40"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="address-english">영문 주소:</label>
-                        <textarea id="address-english" rows="3" cols="40"></textarea>
-                    </div>
-                    <button type="submit" class="btn">저장</button>
-                </form>
+        <!-- 주소 팝업 모달 -->
+        <div id="address-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>주소 편집</h3>
+                    <span class="close" onclick="closeAddressModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="address-form">
+                        <div class="form-group">
+                            <label for="address-korean">한글 주소:</label>
+                            <textarea id="address-korean" rows="3" cols="40"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="address-english">영문 주소:</label>
+                            <textarea id="address-english" rows="3" cols="40"></textarea>
+                        </div>
+                        <button type="submit" class="btn">저장</button>
+                    </form>
+                </div>
             </div>
         </div>
-    </div>
 
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
-    
-    <!-- Firebase 설정 -->
-    <script src="firebase-config.js?v=2025-08-12-01"></script>
-    
-    <script src="script.js?v=2025-08-12-01"></script>
+        <!-- Firebase SDK -->
+        <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+        
+        <!-- Firebase 설정 -->
+        <script src="firebase-config.js?v=2025-08-13-01"></script>
+        
+        <script src="script.js?v=2025-08-13-01"></script>
 </body>
 </html> 

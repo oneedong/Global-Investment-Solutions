@@ -1780,60 +1780,55 @@ function loadDataFromLocalStorage() {
 
 // 실시간 동기화 초기화
 function initializeRealTimeSync() {
-    // Firebase 실시간 리스너 설정
-    if (database) {
-        database.ref('/').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (data && data.lastUpdated) {
-                // 다른 사용자의 변경사항 감지
-                const lastUpdated = new Date(data.lastUpdated);
-                const now = new Date();
-                const timeDiff = now - lastUpdated;
-                
-                // 1초 이내의 변경사항만 반영 (자신의 변경사항 제외)
-                if (timeDiff < 1000 && data.updatedBy !== getCurrentUserId()) {
-                    console.log('다른 사용자의 변경사항을 감지했습니다.');
-                    
-                    if (data.tableData) {
-                        tableData = data.tableData;
-                        renderTable();
-                    }
-                    
-                    if (data.rfpData) {
-                        rfpData = data.rfpData;
-                        renderRfpTable();
-                    }
-                    
-                    if (data.institutionsData) {
-                        institutionsData = data.institutionsData;
-                        renderInstitutionsDashboard();
-                    }
-                    
-                    if (data.gpsData) {
-                        gpsData = data.gpsData;
-                        // 동기화 데이터에도 전략 정규화 적용
-                        normalizeGpStrategies();
-                        renderGpsDashboard();
-                    }
-                    
-                    updateConnectionStatus(true);
-                }
-            }
-        });
-    }
-    
-    // 페이지 포커스 시 동기화
-    window.addEventListener('focus', syncDataFromServer);
-    
-    // 온라인 상태 변경 시 동기화
-    window.addEventListener('online', () => {
-        updateConnectionStatus();
-        syncDataFromServer();
-    });
-    
-    window.addEventListener('offline', () => {
-        updateConnectionStatus();
-    });
+	// Firebase 실시간 리스너 설정
+	if (database) {
+		database.ref('/').on('value', (snapshot) => {
+			const data = snapshot.val();
+			if (data && data.lastUpdated) {
+				// 자신의 변경은 무시하고, 다른 사용자의 변경은 항상 반영
+				if (data.updatedBy !== getCurrentUserId()) {
+					console.log('다른 사용자의 변경사항을 감지했습니다.');
+					
+					if (data.tableData) {
+						tableData = data.tableData;
+						renderTable();
+					}
+					
+					if (data.rfpData) {
+						rfpData = data.rfpData;
+						renderRfpTable();
+					}
+					
+					if (data.institutionsData) {
+						institutionsData = data.institutionsData;
+						renderInstitutionsDashboard();
+					}
+					
+					if (data.gpsData) {
+						gpsData = data.gpsData;
+						// 동기화 데이터에도 전략 정규화 적용
+						normalizeGpStrategies();
+						renderGpsDashboard();
+					}
+					
+					updateConnectionStatus(true);
+				}
+			}
+		});
+	}
+	
+	// 페이지 포커스 시 동기화
+	window.addEventListener('focus', syncDataFromServer);
+	
+	// 온라인 상태 변경 시 동기화
+	window.addEventListener('online', () => {
+		updateConnectionStatus();
+		syncDataFromServer();
+	});
+	
+	window.addEventListener('offline', () => {
+		updateConnectionStatus();
+	});
 }
 
 // Firebase로 데이터 동기화
