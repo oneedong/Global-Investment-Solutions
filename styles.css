@@ -1010,7 +1010,7 @@ body {
     right: 0;
     top: 0;
     bottom: 0;
-    width: 4px;
+    width: 8px; /* 리사이즈 핸들 영역 확대 */
     background: transparent;
     cursor: col-resize;
     transition: background-color 0.2s ease;
@@ -1741,7 +1741,7 @@ body {
   display: grid;
   grid-template-columns: 280px 1fr;
   gap: 16px;
-  height: calc(100% - 60px);
+  height: auto;
 }
 .institutions-sidebar {
   background: #fff;
@@ -1835,8 +1835,8 @@ body {
 }
 
 /* LP 리스트(Contact 열) 가운데 정렬 */
-#institutions-detail-table th:nth-child(5),
-#institutions-detail-table td:nth-child(5) {
+#institutions-detail-table th:nth-child(6),
+#institutions-detail-table td:nth-child(6) {
 	text-align: center;
 }
 #institutions-detail-table .contact-open-btn {
@@ -2161,3 +2161,83 @@ select,
 }
 /* 옵션 자체도 중앙 정렬 시도 (브라우저별 지원 상이) */
 select option { text-align: center; } 
+
+/* 내용이 잘리지 않도록 줄바꿈/폭 자동 조정 및 레이아웃 유연화 */
+.data-table { table-layout: auto; }
+.data-table th, .data-table td { white-space: normal; word-break: break-word; }
+.data-table input, .data-table select { width: 100%; max-width: 100%; }
+
+/* 대시보드 영역 높이 고정 해제 → 페이지 전체에서 자연스러운 세로 스크롤 */
+.dashboard-container,
+.dashboard-content,
+.dashboard-pane.active {
+	height: auto;
+	min-height: 0;
+	overflow: visible;
+}
+
+/* 기관 상세 레이아웃도 고정 높이 해제 */
+.institutions-split { height: auto; }
+
+/* 작은 화면/배율 변경 시 폰트 크기와 패딩을 살짝 줄여 자연스러운 축소 효과 */
+@media (max-width: 1280px) {
+	.data-table { font-size: 0.9rem; }
+	.data-table th, .data-table td { padding: 10px 8px; }
+}
+@media (max-width: 1024px) {
+	.data-table { font-size: 0.85rem; }
+	.data-table th, .data-table td { padding: 8px 6px; }
+} 
+
+/* LP 상세 테이블 7개 컬럼 폭 재정의(초기값) */
+#institutions-detail-table th:nth-child(1),
+#institutions-detail-table td:nth-child(1) { width: 22%; }
+#institutions-detail-table th:nth-child(2),
+#institutions-detail-table td:nth-child(2) { width: 30%; }
+#institutions-detail-table th:nth-child(3),
+#institutions-detail-table td:nth-child(3) { width: 8%; }
+#institutions-detail-table th:nth-child(4),
+#institutions-detail-table td:nth-child(4) { width: 16%; }
+#institutions-detail-table th:nth-child(5),
+#institutions-detail-table td:nth-child(5) { width: 16%; }
+#institutions-detail-table th:nth-child(6),
+#institutions-detail-table td:nth-child(6) { width: 6%; min-width: 80px; text-align: center; }
+#institutions-detail-table th:nth-child(7),
+#institutions-detail-table td:nth-child(7) { width: 2%; min-width: 56px; }
+
+/* LP 테이블 밀도 최적화(기본보다 소폭 컴팩트) */
+#institutions-detail-table { width: 100%; min-width: 0; font-size: 0.92rem; }
+#institutions-detail-table th { padding: 10px 6px; }
+#institutions-detail-table td { padding: 8px 6px; }
+#institutions-detail-table input { padding: 6px 8px; font-size: 0.92rem; }
+#institutions-detail-table .contact-open-btn { padding: 6px 8px; font-size: 0.9rem; }
+
+/* 컨테이너 오버플로우 조정: 가로 넘침 방지, 필요한 경우만 스크롤 */
+.institutions-detail .table-container { overflow-x: auto; overflow-y: auto; }
+
+/* LP 상세 표 Contact 버튼 가운데 정렬 */
+#institutions-detail-table td:nth-child(6) .contact-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* LP 상세 테이블: 대시보드 폭에 맞춤 */
+#institutions-detail-table { width: 100%; min-width: 0; }
+.institutions-detail .table-container { overflow-x: hidden; overflow-y: auto; }
+
+/* LP 상세 테이블: 한 줄 표시 + 자동 레이아웃 + 가로 스크롤 */
+#institutions-detail-table { table-layout: fixed; }
+#institutions-detail-table th,
+#institutions-detail-table td { white-space: nowrap; }
+#institutions-detail-table input[type="text"] { white-space: nowrap; text-overflow: ellipsis; } 
+
+/* 주소 편집 모달 간단 스타일 */
+#address-modal .modal-content { max-width: 520px; width: 92%; }
+#address-modal textarea { width: 100%; resize: vertical; }
+#address-modal .btn { background: #007bff; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+#address-modal .btn:hover { background: #0056b3; }
+
+/* 주소 버튼 */
+.address-edit-btn { background: #17a2b8; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+.address-edit-btn:hover { background: #138496; } 

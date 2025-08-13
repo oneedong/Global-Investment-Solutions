@@ -59,6 +59,8 @@ document.addEventListener('DOMContentLoaded', function() {
             restoreColumnWidths(table);
         });
     }, 100);
+
+    scheduleAutoFitDashboard();
 });
 
 // 탭 초기화
@@ -231,6 +233,7 @@ function renderTable() {
                 </td>
             </tr>
         `;
+        scheduleAutoFitDashboard();
         return;
     }
     
@@ -310,6 +313,7 @@ function renderTable() {
             initializeColumnResize();
             restoreColumnWidths(table);
         }
+        scheduleAutoFitDashboard();
     }, 100);
 }
 
@@ -529,6 +533,7 @@ function renderRfpTable() {
                 </td>
             </tr>
         `;
+        scheduleAutoFitDashboard();
         return;
     }
     
@@ -690,6 +695,7 @@ function renderRfpTable() {
             initializeColumnResize();
             restoreColumnWidths(table);
         }
+        scheduleAutoFitDashboard();
     }, 100);
 }
 
@@ -1097,7 +1103,7 @@ function renderInstitutionsDashboard() {
     if (rows.length === 0) {
         detailTbody.innerHTML = `
             <tr>
-                <td colspan="6" class="empty-table">
+                <td colspan="7" class="empty-table">
                     <i class="fas fa-building"></i>
                     <h3>등록된 기관이 없습니다</h3>
                     <p>오른쪽 상단의 기관 추가 버튼으로 등록하세요.</p>
@@ -1110,16 +1116,16 @@ function renderInstitutionsDashboard() {
     detailTbody.innerHTML = rows.map(inst => `
         <tr data-inst-id="${inst.id}">
             <td>
-                <input type="text" value="${inst.name || ''}" placeholder="한글명" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','name', this.value)">
+                <input type="text" value="${inst.name || ''}" title="${inst.name || ''}" placeholder="한글명" oninput="this.title=this.value" ondblclick="autoFitColumnForCell(this)" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','name', this.value)">
             </td>
             <td>
-                <input type="text" value="${inst.englishFullName || ''}" placeholder="영문 전체 명칭" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','englishFullName', this.value)">
+                <input type="text" value="${inst.englishFullName || ''}" title="${inst.englishFullName || ''}" placeholder="영문 전체 명칭" oninput="this.title=this.value" ondblclick="autoFitColumnForCell(this)" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','englishFullName', this.value)">
             </td>
             <td>
-                <input type="text" value="${inst.abbreviation || ''}" placeholder="영문 약어" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','abbreviation', this.value)">
+                <input type="text" value="${inst.abbreviation || ''}" title="${inst.abbreviation || ''}" placeholder="영문 약어" oninput="this.title=this.value" ondblclick="autoFitColumnForCell(this)" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','abbreviation', this.value)">
             </td>
             <td>
-                <input type="text" value="${inst.address || ''}" placeholder="주소" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','address', this.value)">
+                <button class="address-edit-btn" onclick="openAddressModal('${selectedInstitutionCategory}','${inst.id}')">주소 편집</button>
             </td>
             <td>
                 <button class="add-institution-btn contact-open-btn" onclick="openInstitutionContactsDashboard('${inst.id}', '${(inst.name || '').replace(/'/g, "&#39;")}')">
@@ -1135,6 +1141,27 @@ function renderInstitutionsDashboard() {
             </td>
         </tr>
     `).join('');
+
+    // 더블클릭 자동 맞춤: 이벤트 위임(1회 바인딩)
+    const tableEl = document.getElementById('institutions-detail-table');
+    if (tableEl && !tableEl._autoFitBound) {
+        tableEl.addEventListener('dblclick', (e) => {
+            const target = e.target;
+            const cell = target.closest('td, th');
+            if (!cell || !tableEl.contains(cell)) return;
+            autoFitColumnForCell(target);
+        });
+        tableEl._autoFitBound = true;
+    }
+
+    // LP 테이블 리사이즈 초기화/복원 보강
+    const lpTable = document.getElementById('institutions-detail-table');
+    if (lpTable) {
+        initializeColumnResize();
+        restoreColumnWidths(lpTable);
+    }
+
+    scheduleAutoFitDashboard();
 }
 
 function setSelectedInstitutionCategory(category) {
@@ -1157,7 +1184,8 @@ function openAddInstitutionDialog() {
         name: '',
         englishFullName: '',
         abbreviation: '',
-        address: ''
+        addressKorean: '',
+        addressEnglish: ''
     };
     institutionsData[selectedInstitutionCategory] = institutionsData[selectedInstitutionCategory] || [];
     institutionsData[selectedInstitutionCategory].push(newInstitution);
@@ -1178,11 +1206,8 @@ function updateInstitutionField(category, institutionId, field, value) {
     if (!item) return;
     item[field] = value;
     saveDataToLocalStorage();
-    // 드롭다운 등 종속 컴포넌트 업데이트
     if (field === 'name') {
-        // RFP 표의 드롭다운 다시 구성
         document.querySelectorAll('[id^="institution-dropdown-"]').forEach(sel => {
-            // 필요시 개별 rfp에 대해 updateInstitutionDropdown이 호출되도록 렌더 갱신
         });
     }
     syncDataToServer();
@@ -1341,6 +1366,7 @@ function renderGpsDashboard() {
             initializeColumnResize();
             restoreColumnWidths(table);
         }
+        scheduleAutoFitDashboard();
     }, 50);
 }
 
@@ -2083,74 +2109,104 @@ function resizeColumn(columnClass, width) {
 
 // 테이블 열 리사이즈 기능 초기화
 function initializeColumnResize() {
-    const tables = document.querySelectorAll('.data-table');
-    
-    tables.forEach(table => {
-        const headers = table.querySelectorAll('th');
-        
-        headers.forEach((header, index) => {
-            let isResizing = false;
-            let startX = 0;
-            let startWidth = 0;
-            
-            const handleMouseDown = (e) => {
-                // 리사이즈 핸들 영역에서만 시작
-                const rect = header.getBoundingClientRect();
-                const handleX = rect.right - 4;
-                
-                if (e.clientX >= handleX) {
-                    isResizing = true;
-                    startX = e.clientX;
-                    startWidth = header.offsetWidth;
-                    
-                    header.classList.add('resizing');
-                    table.classList.add('resizing');
-                    
-                    document.addEventListener('mousemove', handleMouseMove);
-                    document.addEventListener('mouseup', handleMouseUp);
-                    
-                    e.preventDefault();
-                }
-            };
-            
-            const handleMouseMove = (e) => {
-                if (!isResizing) return;
-                
-                const deltaX = e.clientX - startX;
-                const newWidth = Math.max(50, startWidth + deltaX); // 최소 50px
-                
-                // 현재 열과 다음 열의 너비 조정
-                const currentCol = header;
-                const nextCol = headers[index + 1];
-                
-                if (nextCol) {
-                    const totalWidth = currentCol.offsetWidth + nextCol.offsetWidth;
-                    const nextColNewWidth = Math.max(50, totalWidth - newWidth);
-                    
-                    currentCol.style.width = `${newWidth}px`;
-                    nextCol.style.width = `${nextColNewWidth}px`;
-                } else {
-                    currentCol.style.width = `${newWidth}px`;
-                }
-            };
-            
-            const handleMouseUp = () => {
-                if (isResizing) {
-                    isResizing = false;
-                    header.classList.remove('resizing');
-                    table.classList.remove('resizing');
-                    
-                    document.removeEventListener('mousemove', handleMouseMove);
-                    document.removeEventListener('mouseup', handleMouseUp);
-                    
-                    // 변경사항 저장
-                    saveColumnWidths(table);
-                }
-            };
-            
-            header.addEventListener('mousedown', handleMouseDown);
-        });
-    });
+	const tables = document.querySelectorAll('.data-table');
+	
+	tables.forEach(table => {
+		const headers = table.querySelectorAll('th');
+		
+		headers.forEach((header, index) => {
+			let isResizing = false;
+			let startX = 0;
+			let startWidth = 0;
+			
+			const handleMouseDown = (e) => {
+				// 리사이즈 핸들 영역에서만 시작
+				const rect = header.getBoundingClientRect();
+				const handleX = rect.right - 12; // 감지 영역 확대(12px)
+				
+				if (e.clientX >= handleX) {
+					isResizing = true;
+					startX = e.clientX;
+					startWidth = header.offsetWidth;
+					
+					header.classList.add('resizing');
+					table.classList.add('resizing');
+					
+					document.addEventListener('mousemove', handleMouseMove);
+					document.addEventListener('mouseup', handleMouseUp);
+					
+					e.preventDefault();
+				}
+			};
+			
+			const handleMouseMove = (e) => {
+				if (!isResizing) return;
+				
+				const deltaX = e.clientX - startX;
+				const newWidth = Math.max(50, startWidth + deltaX); // 최소 50px
+				
+				// 현재 열과 다음 열의 너비 조정
+				const currentCol = header;
+				const nextCol = headers[index + 1];
+				
+				if (nextCol) {
+					const totalWidth = currentCol.offsetWidth + nextCol.offsetWidth;
+					const nextColNewWidth = Math.max(50, totalWidth - newWidth);
+					
+					currentCol.style.width = `${newWidth}px`;
+					nextCol.style.width = `${nextColNewWidth}px`;
+					// 모든 셀에도 폭 적용
+					applyColumnWidthToAllCells(table, index, newWidth);
+					applyColumnWidthToAllCells(table, index + 1, nextColNewWidth);
+				} else {
+					currentCol.style.width = `${newWidth}px`;
+					applyColumnWidthToAllCells(table, index, newWidth);
+				}
+			};
+			
+			const handleMouseUp = () => {
+				if (isResizing) {
+					isResizing = false;
+					header.classList.remove('resizing');
+					table.classList.remove('resizing');
+					
+					document.removeEventListener('mousemove', handleMouseMove);
+					document.removeEventListener('mouseup', handleMouseUp);
+					
+					// 변경사항 저장
+					saveColumnWidths(table);
+					// 리사이즈 후 대시보드 자동 맞춤
+					scheduleAutoFitDashboard();
+				}
+			};
+			
+			// 더블클릭: 내용에 맞게 자동 맞춤
+			const handleDblClick = () => {
+				let maxWidth = 50; // 최소 폭
+				// 헤더 자체 콘텐츠 고려
+				maxWidth = Math.max(maxWidth, header.scrollWidth + 24);
+				// 모든 행의 동일 컬럼 셀 검사
+				const rows = table.querySelectorAll('tr');
+				rows.forEach(row => {
+					const cell = row.children && row.children[index];
+					if (!cell) return;
+					const input = cell.querySelector('input, select, button, span, div');
+					if (input) {
+						maxWidth = Math.max(maxWidth, input.scrollWidth + 28);
+					} else {
+						maxWidth = Math.max(maxWidth, cell.scrollWidth + 24);
+					}
+				});
+				const newWidth = Math.min(Math.max(50, maxWidth), 800); // 상한 800px
+				header.style.width = `${newWidth}px`;
+				applyColumnWidthToAllCells(table, index, newWidth);
+				saveColumnWidths(table);
+			};
+			
+			header.addEventListener('mousedown', handleMouseDown);
+			header.addEventListener('dblclick', handleDblClick);
+		});
+	});
 }
 
 // 열 너비 저장
@@ -2178,6 +2234,8 @@ function restoreColumnWidths(table) {
         headers.forEach((header, index) => {
             if (widths[index]) {
                 header.style.width = widths[index];
+                // td에도 동일 적용
+                applyColumnWidthToAllCells(table, index, widths[index]);
             }
         });
     }
@@ -2372,4 +2430,132 @@ function copyEmails(institutionId) {
 function closeDeptEmailModal() {
     const modal = document.getElementById('dept-email-modal');
     if (modal) modal.style.display = 'none';
+}
+
+// 특정 테이블의 특정 컬럼 너비를 모든 셀(th, td)에 적용
+function applyColumnWidthToAllCells(table, colIndex, widthPx) {
+	const rows = table.querySelectorAll('tr');
+	rows.forEach(row => {
+		const cell = row.children && row.children[colIndex];
+		if (cell) {
+			cell.style.width = typeof widthPx === 'number' ? `${widthPx}px` : widthPx;
+		}
+	});
+}
+
+// 셀 더블클릭 시 해당 열 자동 맞춤
+function autoFitColumnForCell(el) {
+	const td = el.closest('td, th');
+	if (!td) return;
+	const table = td.closest('table');
+	if (!table) return;
+	const index = td.cellIndex;
+	const headers = table.querySelectorAll('th');
+	const header = headers[index];
+	let maxWidth = 50;
+	if (header) maxWidth = Math.max(maxWidth, header.scrollWidth + 24);
+	const rows = table.querySelectorAll('tr');
+	rows.forEach(row => {
+		const cell = row.children && row.children[index];
+		if (!cell) return;
+		const content = cell.querySelector('input, select, button, span, div') || cell;
+		maxWidth = Math.max(maxWidth, content.scrollWidth + 28);
+	});
+	const newWidth = Math.min(Math.max(50, maxWidth), 800);
+	if (header) header.style.width = `${newWidth}px`;
+	applyColumnWidthToAllCells(table, index, newWidth);
+	saveColumnWidths(table);
+}
+
+// ===== 대시보드 자동 스케일링(컨테이너 폭에 맞춤) =====
+let __autoFitTimer = null;
+function scheduleAutoFitDashboard() {
+    // 자동 스케일링 비활성화: 남아 있을 수 있는 transform/width만 정리
+    const pane = document.querySelector('.dashboard-pane.active');
+    if (pane) {
+        pane.style.transform = 'none';
+        pane.style.width = '';
+    }
+}
+
+function autoFitActiveDashboard() {
+    // 비활성화 (no-op)
+}
+
+// 이전에 등록된 리사이즈 처리로 인한 부작용을 막기 위한 방어 코드
+if (window && window.removeEventListener) {
+    try { window.removeEventListener('resize', scheduleAutoFitDashboard); } catch (e) {}
+}
+// ===== 대시보드 자동 스케일링 끝 =====
+
+// 주소 모달 상태
+let openAddressCategory = null;
+let openAddressInstitutionId = null;
+
+function openAddressModal(category, institutionId) {
+    openAddressCategory = category;
+    openAddressInstitutionId = institutionId;
+    const list = institutionsData[category] || [];
+    const item = list.find(i => i.id === institutionId);
+    const modal = document.getElementById('address-modal');
+    if (!modal) return;
+    const ko = document.getElementById('address-korean');
+    const en = document.getElementById('address-english');
+    ko.value = (item && item.addressKorean) ? item.addressKorean : '';
+    en.value = (item && item.addressEnglish) ? item.addressEnglish : '';
+
+    // 폼 하단에 복사 버튼 추가(중복 생성 방지)
+    const form = document.getElementById('address-form');
+    if (form && !form._copyButtonsAdded) {
+        const wrap = document.createElement('div');
+        wrap.style.display = 'flex';
+        wrap.style.gap = '8px';
+        wrap.style.marginTop = '10px';
+        const copyKo = document.createElement('button');
+        copyKo.type = 'button';
+        copyKo.textContent = '한글 주소 복사';
+        copyKo.className = 'btn';
+        copyKo.onclick = () => {
+            navigator.clipboard.writeText(document.getElementById('address-korean').value || '');
+        };
+        const copyEn = document.createElement('button');
+        copyEn.type = 'button';
+        copyEn.textContent = '영문 주소 복사';
+        copyEn.className = 'btn';
+        copyEn.onclick = () => {
+            navigator.clipboard.writeText(document.getElementById('address-english').value || '');
+        };
+        wrap.appendChild(copyKo);
+        wrap.appendChild(copyEn);
+        form.appendChild(wrap);
+        form._copyButtonsAdded = true;
+    }
+
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        saveAddressFromModal();
+    };
+
+    modal.style.display = 'block';
+}
+
+function closeAddressModal() {
+    const modal = document.getElementById('address-modal');
+    if (modal) modal.style.display = 'none';
+    openAddressCategory = null;
+    openAddressInstitutionId = null;
+}
+
+function saveAddressFromModal() {
+    if (!openAddressCategory || !openAddressInstitutionId) return;
+    const ko = (document.getElementById('address-korean').value || '').trim();
+    const en = (document.getElementById('address-english').value || '').trim();
+    const list = institutionsData[openAddressCategory] || [];
+    const item = list.find(i => i.id === openAddressInstitutionId);
+    if (!item) return;
+    item.addressKorean = ko;
+    item.addressEnglish = en;
+    saveDataToLocalStorage();
+    closeAddressModal();
+    renderInstitutionsDashboard();
 }

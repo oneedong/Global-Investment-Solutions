@@ -426,6 +426,29 @@
         </div>
     </div>
 
+    <!-- 주소 팝업 모달 -->
+    <div id="address-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>주소 편집</h3>
+                <span class="close" onclick="closeAddressModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="address-form">
+                    <div class="form-group">
+                        <label for="address-korean">한글 주소:</label>
+                        <textarea id="address-korean" rows="3" cols="40"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="address-english">영문 주소:</label>
+                        <textarea id="address-english" rows="3" cols="40"></textarea>
+                    </div>
+                    <button type="submit" class="btn">저장</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
