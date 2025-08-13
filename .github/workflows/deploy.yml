@@ -1,0 +1,60 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare cache-busting version
+        id: cachebust
+        run: |
+          CACHE_BUST=$(echo "${GITHUB_SHA}" | cut -c1-8)
+          echo "CACHE_BUST=${CACHE_BUST}" >> $GITHUB_OUTPUT
+
+      - name: Update query versions in index.html
+        run: |
+          set -e
+          CACHE_BUST="${{ steps.cachebust.outputs.CACHE_BUST }}"
+          # .css/.js 중 ?v= 파라미터가 있는 항목만 안전하게 치환
+          sed -E -i "s/(\\.(css|js)\\?v=)[^"]+/\\1${CACHE_BUST}/g" index.html
+
+      - name: Build static site artifact
+        run: |
+          set -e
+          mkdir -p dist
+          cp -v index.html dist/
+          cp -v styles.css dist/
+          cp -v script.js dist/
+          cp -v firebase-config.js dist/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
