@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -21,6 +21,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
       - name: Prepare cache-busting version
         id: cachebust
         run: |
@@ -31,8 +34,7 @@ jobs:
         run: |
           set -e
           CACHE_BUST="${{ steps.cachebust.outputs.CACHE_BUST }}"
-          # .css/.js 중 ?v= 파라미터가 있는 항목만 안전하게 치환
-          sed -E -i "s/(\\.(css|js)\\?v=)[^"]+/\\1${CACHE_BUST}/g" index.html
+          sed -E -i "s/(\.(css|js)\?v=)[^\"]+/\1${CACHE_BUST}/g" index.html
 
       - name: Build static site artifact
         run: |
