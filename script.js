@@ -39,10 +39,18 @@ const USERS = [
 // 현재 페이지 경로 기준으로 안전하게 상대 경로 이동
 function goTo(path) {
   try {
-    const url = new URL(path, window.location.href); // 현재 위치 기준으로 절대 URL 생성
+    const isGitHubPages = /\.github\.io$/.test(window.location.hostname);
+    if (isGitHubPages) {
+      const repoBase = '/Global-Investment-Solutions/';
+      const url = window.location.origin + repoBase + path;
+      window.location.replace(url); // 뒤로가기 시 로그인 페이지로 안 돌아오도록
+      return;
+    }
+    // 로컬/기타 서버 환경
+    const url = new URL(path, window.location.href);
     window.location.assign(url.href);
   } catch (_) {
-    window.location.href = path; // 최후 수단
+    window.location.href = path;
   }
 }
 
