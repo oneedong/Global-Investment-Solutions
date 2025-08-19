@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Global Investment Solutions</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+</head>
+<body>
+  <div class="container">
+      <header class="header">
+          <div class="header-left">
+              <h1 id="image.pngp-title" title="새로고침"><i class="fas fa-globe"></i> Global Investment Solutions</h1>
+              <div class="connection-status">
+                  <i class="fas fa-circle" id="status-icon" title="연결 상태"></i>
+              </div>
+          </div>
+          <div class="header-right">
+              <!-- 공고 검색 박스 -->
+              <div class="announcement-search-box">
+                  <h3>
+                      <i class="fas fa-search"></i>
+                      RFP/RFI 공고 검색
+                  </h3>
+                  <div class="announcement-links">
+                      <a href="https://www.kpasset.go.kr" target="_blank" class="announcement-link">
+                          <i class="fas fa-building"></i>
+                          <span class="announcement-link-text">우정사업본부 거래기관선정공고</span>
+                          <i class="fas fa-external-link-alt announcement-link-arrow"></i>
+                      </a>
+                      <a href="https://www.kofia.or.kr/brd/m_212/list.do" target="_blank" class="announcement-link">
+                          <i class="fas fa-chart-line"></i>
+                          <span class="announcement-link-text">금융투자협회 공지사항</span>
+                          <i class="fas fa-external-link-alt announcement-link-arrow"></i>
+                      </a>
+                  </div>
+              </div>
+
+          </div>
+      </header>
+
+      <div class="dashboard-container">
+          <div class="dashboard-tabs">
+              <button class="dashboard-tab active" data-dashboard="contacts">
+                  <i class="fas fa-address-book"></i> 연락처 관리
+              </button>
+              <button class="dashboard-tab" data-dashboard="rfp">
+                  <i class="fas fa-file-contract"></i> RFP/RFI
+              </button>
+              <button class="dashboard-tab" data-dashboard="institutions">
+                  <i class="fas fa-building"></i> LP list
+              </button>
+              <button class="dashboard-tab" data-dashboard="gps">
+                  <i class="fas fa-users"></i> GP list
+              </button>
+          </div>
+
+          <div class="dashboard-content">
+              <!-- 연락처 관리 대시보드 -->
+              <div class="dashboard-pane active" id="contacts-dashboard">
+                  <div class="tab-container">
+                      <div class="tab-buttons">
+                          <button class="tab-btn active" data-tab="pe-pd">
+                              <i class="fas fa-chart-line"></i> PE/PD
+                          </button>
+                          <button class="tab-btn" data-tab="real-estate">
+                              <i class="fas fa-home"></i> Real Estate
+                          </button>
+                          <button class="tab-btn" data-tab="infra">
+                              <i class="fas fa-road"></i> Infra
+                          </button>
+                      </div>
+
+                      <div class="tab-content">
+                          <!-- PE/PD 탭 -->
+                          <div class="tab-pane active" id="pe-pd">
+                              <div class="section-header">
+                                  <h2>PE/PD (Private Equity / Private Debt)</h2>
+                                  <div class="header-actions">
+                                      <button class="copy-emails-btn" onclick="copyAllEmails('pe-pd')">
+                                          <i class="fas fa-copy"></i> 모든 이메일 복사
+                                      </button>
+                                      <button class="add-row-btn" onclick="addTableRow('pe-pd')">
+                                          <i class="fas fa-plus"></i> 행 추가
+                                      </button>
+                                  </div>
+                              </div>
+                              <div class="table-container">
+                                  <table class="data-table" id="pe-pd-table">
+                                      <thead>
+                                          <tr>
+                                              <th class="number-col">No.</th>
+                                              <th>기관</th>
+                                              <th>고객명</th>
+                                              <th>직급</th>
+                                              <th>이메일</th>
+                                              <th class="action-col">작업</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody id="pe-pd-tbody">
+                                          <!-- 데이터가 여기에 동적으로 추가됩니다 -->
+                                      </tbody>
+                                  </table>
+                              </div>
+                          </div>
+
+                          <!-- Real Estate 탭 -->
+                          <div class="tab-pane" id="real-estate">
+                              <div class="section-header">
+                                  <h2>Real Estate</h2>
+                                  <div class="header-actions">
+                                      <button class="copy-emails-btn" onclick="copyAllEmails('real-estate')">
+                                          <i class="fas fa-copy"></i> 모든 이메일 복사
+                                      </button>
+                                      <button class="add-row-btn" onclick="addTableRow('real-estate')">
+                                          <i class="fas fa-plus"></i> 행 추가
+                                      </button>
+                                  </div>
+                              </div>
+                              <div class="table-container">
+                                  <table class="data-table" id="real-estate-table">
+                                      <thead>
+                                          <tr>
+                                              <th class="number-col">No.</th>
+                                              <th>기관</th>
+                                              <th>고객명</th>
+                                              <th>직급</th>
+                                              <th>이메일</th>
+                                              <th class="action-col">작업</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody id="real-estate-tbody">
+                                          <!-- 데이터가 여기에 동적으로 추가됩니다 -->
+                                      </tbody>
+                                  </table>
+                              </div>
+                          </div>
+
+                          <!-- Infra 탭 -->
+                          <div class="tab-pane" id="infra">
+                              <div class="section-header">
+                                  <h2>Infra (Infrastructure)</h2>
+                                  <div class="header-actions">
+                                      <button class="copy-emails-btn" onclick="copyAllEmails('infra')">
+                                          <i class="fas fa-copy"></i> 모든 이메일 복사
+                                      </button>
+                                      <button class="add-row-btn" onclick="addTableRow('infra')">
+                                          <i class="fas fa-plus"></i> 행 추가
+                                      </button>
+                                  </div>
+                              </div>
+                              <div class="table-container">
+                                  <table class="data-table" id="infra-table">
+                                      <thead>
+                                          <tr>
+                                              <th class="number-col">No.</th>
+                                              <th>기관</th>
+                                              <th>고객명</th>
+                                              <th>직급</th>
+                                              <th>이메일</th>
+                                              <th class="action-col">작업</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody id="infra-tbody">
+                                          <!-- 데이터가 여기에 동적으로 추가됩니다 -->
+                                      </tbody>
+                                  </table>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              <!-- RFP/RFI 대시보드 -->
+              <div class="dashboard-pane" id="rfp-dashboard">
+                  <div class="section-header">
+                      <h2>RFP/RFI 관리</h2>
+                      <div class="header-actions">
+                          <button class="add-row-btn" onclick="addRfpRow()">
+                              <i class="fas fa-plus"></i> 공고 추가
+                          </button>
+                      </div>
+                  </div>
+                  
+                  <!-- 필터 섹션 -->
+                  <div class="filter-section">
+                      <div class="filter-group">
+                          <label>기관 분류:</label>
+                          <select id="category-filter" onchange="filterRfpTable()">
+                              <option value="">전체</option>
+                              <option value="연기금">연기금</option>
+                              <option value="공제회">공제회</option>
+                              <option value="보험사">보험사</option>
+                              <option value="중앙회">중앙회</option>
+                              <option value="은행">은행</option>
+                              <option value="증권사">증권사</option>
+                              <option value="운용사">운용사</option>
+                              <option value="캐피탈">캐피탈</option>
+                              <option value="기타">기타</option>
+                          </select>
+                      </div>
+                      <div class="filter-group">
+                          <label>기관명:</label>
+                          <input type="text" id="institution-filter" placeholder="기관명 검색" onkeyup="filterRfpTable()">
+                      </div>
+                      <div class="filter-group">
+                          <label>종류:</label>
+                          <select id="type-filter" onchange="filterRfpTable()">
+                              <option value="">전체</option>
+                              <option value="RFP">RFP</option>
+                              <option value="RFI">RFI</option>
+                              <option value="기타">기타</option>
+                          </select>
+                      </div>
+                      <div class="filter-group">
+                          <label>전략:</label>
+                          <select id="strategy-filter" onchange="filterRfpTable()">
+                              <option value="">전체</option>
+                              <option value="PE">PE</option>
+                              <option value="PD">PD</option>
+                              <option value="Real Estate Equity">Real Estate Equity</option>
+                              <option value="Real Estate Debt">Real Estate Debt</option>
+                              <option value="Infra Equity">Infra Equity</option>
+                              <option value="Infra Debt">Infra Debt</option>
+                              <option value="기타">기타</option>
+                          </select>
+                      </div>
+                      <div class="filter-group">
+                          <label>공고일:</label>
+                          <input type="date" id="announcement-filter" onchange="filterRfpTable()">
+                      </div>
+                      <div class="filter-group">
+                          <label>마감일:</label>
+                          <select id="deadline-filter" onchange="filterRfpTable()">
+                              <option value="">전체</option>
+                              <option value="today">오늘</option>
+                              <option value="week">이번 주</option>
+                              <option value="month">이번 달</option>
+                              <option value="overdue">마감 지남</option>
+                          </select>
+                      </div>
+                      <div class="filter-group">
+                          <label>참여 GP:</label>
+                          <input type="text" id="gp-filter" placeholder="GP명 검색" onkeyup="filterRfpTable()">
+                      </div>
+                      <button class="clear-filters-btn" onclick="clearRfpFilters()">
+                          <i class="fas fa-times"></i> 필터 초기화
+                      </button>
+                  </div>
+
+                  <div class="table-container">
+                      <table class="data-table" id="rfp-table">
+                          <thead>
+                              <tr>
+                                  <th class="number-col">No.</th>
+                                  <th>기관 분류/기관명</th>
+                                  <th>종류</th>
+                                  <th>전략</th>
+                                  <th>모집 공고일</th>
+                                  <th>제출 마감일</th>
+                                  <th>참여한 GP</th>
+                                  <th>최종 선정</th>
+                                  <th class="action-col">작업</th>
+                              </tr>
+                          </thead>
+                          <tbody id="rfp-tbody">
+                              <!-- RFP/RFI 데이터가 여기에 동적으로 추가됩니다 -->
+                          </tbody>
+                      </table>
+                  </div>
+          </div>
+
+          <!-- 기관 관리 대시보드 -->
+          <div class="dashboard-pane" id="institutions-dashboard">
+              <div class="section-header">
+                  <h2>기관 관리</h2>
+                  <div class="header-actions">
+                      <button class="add-row-btn" onclick="addInstitutionCategory()">
+                          <i class="fas fa-plus"></i> 분류 추가
+                      </button>
+                  </div>
+              </div>
+
+              <div class="institutions-split">
+                  <div class="institutions-sidebar">
+                      <div class="sidebar-summary">
+                          <span class="label">총 기관 수</span>
+                          <span class="value" id="institutions-total-count">0</span>
+                      </div>
+                      <ul id="institutions-category-list" class="category-list">
+                          <!-- 카테고리들이 여기에 동적으로 추가됩니다 -->
+                      </ul>
+                  </div>
+                  <div class="institutions-detail">
+                      <div class="detail-header">
+                          <h3 id="institutions-detail-title">카테고리</h3>
+                          <div class="detail-actions">
+                              <button class="add-institution-btn" onclick="openAddInstitutionDialog()">
+                                  <i class="fas fa-plus"></i> 기관 추가
+                              </button>
+                          </div>
+                      </div>
+                      <div class="table-container">
+                          <table class="data-table" id="institutions-detail-table">
+                              <thead>
+                                  <tr>
+                                      <th>한글명</th>
+                                      <th>영문 전체 명칭</th>
+                                      <th>영문 약어</th>
+                                      <th>주소</th>
+                                      <th>Contact</th>
+                                      <th class="action-col">작업</th>
+                                  </tr>
+                              </thead>
+                              <tbody id="institutions-detail-tbody">
+                                  <!-- 기관들이 여기에 동적으로 추가됩니다 -->
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          <!-- GP 관리 대시보드 -->
+          <div class="dashboard-pane" id="gps-dashboard">
+              <div class="section-header">
+                  <h2>GP 관리</h2>
+                  <div class="header-actions">
+                      <button class="add-row-btn" onclick="openAddGpDialog()">
+                          <i class="fas fa-plus"></i> GP 추가
+                      </button>
+                  </div>
+              </div>
+              
+              <div class="institutions-split">
+                  <div class="institutions-sidebar">
+                      <div class="sidebar-summary">
+                          <span class="label">총 GP 수</span>
+                          <span class="value" id="gps-total-count">0</span>
+                      </div>
+                      <ul id="gp-letter-list" class="category-list">
+                          <!-- A~Z 레터가 동적으로 추가됩니다 -->
+                      </ul>
+                  </div>
+                  <div class="institutions-detail">
+                      <div class="detail-header">
+                          <h3 id="gp-detail-title">GP (A)</h3>
+                          <div class="detail-actions">
+                              <button class="add-institution-btn" onclick="openAddGpDialog()">
+                                  <i class="fas fa-plus"></i> GP 추가
+                              </button>
+                          </div>
+                      </div>
+                      <div class="table-container">
+                          <table class="data-table" id="gps-detail-table">
+                              <thead>
+                                  <tr>
+                                      <th>GP명</th>
+                                      <th>영문 전체 명칭</th>
+                                      <th>취급 전략</th>
+                                      <th class="action-col">작업</th>
+                                  </tr>
+                              </thead>
+                              <tbody id="gp-detail-tbody">
+                                  <!-- 선택된 레터의 GP 목록이 동적으로 추가됩니다 -->
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      </div>
+
+      <!-- 기관 연락처 모달 -->
+      <div id="institution-contacts-modal" class="modal">
+          <div class="modal-content">
+              <div class="modal-header">
+                  <h3 id="institution-contacts-title">기관 연락처</h3>
+                  <span class="close" onclick="closeInstitutionContactsModal()">&times;</span>
+              </div>
+              <div class="modal-body">
+                  <div class="header-actions" style="justify-content: space-between; margin-bottom: 8px; align-items: center;">
+                      <button class="add-row-btn" id="dept-copy-open-btn" onclick="openDeptCopyModal()">
+                          <i class="fas fa-copy"></i> 부서별로
+                      </button>
+                      <button class="add-row-btn" onclick="addInstitutionContact()">
+                          <i class="fas fa-user-plus"></i> 연락처 추가
+                      </button>
+                  </div>
+                  <div class="table-container">
+                      <table class="data-table" id="institution-contacts-table">
+                          <thead>
+                              <tr>
+                                  <th class="number-col">No.</th>
+                                  <th>부서명</th>
+                                  <th>직급</th>
+                                  <th>성함</th>
+                                  <th>E-mail</th>
+                                  <th>내선번호</th>
+                                  <th>핸드폰</th>
+                                  <th class="action-col">작업</th>
+                              </tr>
+                          </thead>
+                          <tbody id="institution-contacts-tbody"></tbody>
+                      </table>
+                  </div>
+              </div>
+          </div>
+      </div>
+
+      <!-- 부서 선택 모달 -->
+      <div id="dept-email-modal" class="modal">
+          <div class="modal-content dept-modal">
+              <div class="modal-header">
+                  <h3>부서 선택</h3>
+                  <span class="close" onclick="closeDeptEmailModal()">&times;</span>
+              </div>
+              <div class="modal-body">
+                  <div id="dept-email-list" class="dept-actions"></div>
+              </div>
+          </div>
+      </div>
+
+      <!-- 주소 팝업 모달 -->
+      <div id="address-modal" class="modal">
+          <div class="modal-content">
+              <div class="modal-header">
+                  <h3>주소 편집</h3>
+                  <span class="close" onclick="closeAddressModal()">&times;</span>
+              </div>
+              <div class="modal-body">
+                  <form id="address-form">
+                      <div class="form-group">
+                          <label for="address-korean">한글 주소:</label>
+                          <textarea id="address-korean" rows="3" cols="40"></textarea>
+                      </div>
+                      <div class="form-group">
+                          <label for="address-english">영문 주소:</label>
+                          <textarea id="address-english" rows="3" cols="40"></textarea>
+                      </div>
+                      <button type="submit" class="btn">저장</button>
+                  </form>
+              </div>
+          </div>
+      </div>
+
+      <!-- Firebase SDK -->
+      <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+      <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+      
+      <!-- Firebase 설정 -->
+      <script src="firebase-config.js"></script>
+      
+      <script src="script.js"></script>
+  </div>
+</body>
+</html> 

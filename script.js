@@ -119,8 +119,8 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         localStorage.removeItem('savedUserId');
       }
-      // 로그인 성공: 메인 대시보드(index.html)로 이동
-      window.location.href = 'index.html';
+      // 로그인 성공: 메인 대시보드(main.html)로 이동
+      window.location.href = 'main.html';
     });
 });
 
@@ -2728,7 +2728,7 @@ window.addEventListener('DOMContentLoaded', () => {
     } else {
       localStorage.removeItem('savedUserId');
     }
-    // 로그인 성공: 메인 대시보드(index.html)로 이동
-    window.location.href = 'index.html';
+    // 로그인 성공: 메인 대시보드(main.html)로 이동
+    window.location.href = 'main.html';
   });
 });
