@@ -15,18 +15,25 @@
   <div class="container">
       <header class="header">
           <div class="header-left">
-              <h1 id="image.pngp-title" title="새로고침"><i class="fas fa-globe"></i> Global Investment Solutions</h1>
+              <div class="brand" id="brand">
+                  <img src="symbol_transparent.png" class="brand-logo" alt="KB">
+                  <h1 id="app-title" title="새로고침">Global Investment Solutions</h1>
+              </div>
               <div class="connection-status">
                   <i class="fas fa-circle" id="status-icon" title="연결 상태"></i>
               </div>
           </div>
           <div class="header-right">
-              <!-- 로그아웃 -->
-              <button class="add-row-btn" id="logoutBtn" title="로그아웃">
-                  <i class="fas fa-sign-out-alt"></i> 로그아웃
-              </button>
+              <!-- 주차 등록 -->
+              <a class="add-row-btn" href="https://a21453.pweb.kr/login" target="_blank" title="ID: KL0, PW: 202208">
+                  <i class="fas fa-parking"></i> 주차 등록
+              </a>
+              <!-- 퀵 서비스 -->
+              <a class="add-row-btn" href="https://stnlogis.com/" target="_blank" title="회사선택: 8910, ID: se23162, PW: Password1!">
+                  <i class="fas fa-shipping-fast"></i> 퀵 서비스
+              </a>
               <!-- RFP/RFI 드롭다운 -->
-              <div class="dropdown" tabindex="0">
+              <div class="dropdown" tabindex="0" style="margin-right: 12px;">
                   <button class="add-row-btn">
                       <i class="fas fa-search"></i> RFP/RFI 공고 검색
                   </button>
@@ -41,14 +48,10 @@
                       </a>
                   </div>
               </div>
-              <!-- 주차 등록 -->
-              <a class="add-row-btn" href="https://a21453.pweb.kr/login" target="_blank" title="ID: KL0, PW: 202208">
-                  <i class="fas fa-parking"></i> 주차 등록
-              </a>
-              <!-- 퀵 서비스 -->
-              <a class="add-row-btn" href="https://stnlogis.com/" target="_blank" title="회사선택: 8910, ID: se23162, PW: Password1!">
-                  <i class="fas fa-shipping-fast"></i> 퀵 서비스
-              </a>
+              <!-- 로그아웃 (맨 오른쪽) -->
+              <button class="add-row-btn" id="logoutBtn" title="로그아웃">
+                  <i class="fas fa-sign-out-alt"></i> 로그아웃
+              </button>
           </div>
       </header>
 
@@ -489,5 +492,6 @@
       
       <script src="script.js"></script>
   </div>
+  <div class="app-footer">ⓒ se23162. All rights reserved.</div>
 </body>
 </html> 

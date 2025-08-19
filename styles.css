@@ -35,6 +35,19 @@ body {
     gap: 8px;
 }
 
+/* 브랜드 로고 + 타이틀 */
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-logo { height: 36px; width: auto; display: block; }
+.header-left h1#app-title { font-size: 1.8rem; margin: 0; }
+
+/* 공통 푸터 */
+.app-footer {
+  text-align: center;
+  font-size: 0.78rem;
+  color: #b2bec3;
+  padding: 10px 0 0 0;
+}
+
 .header-right {
     display: flex;
     align-items: center;
@@ -377,16 +390,16 @@ body {
 .memo-wrapper { display: inline-flex; align-items: center; gap: 8px; justify-content: center; }
 .memo-indicator { background: #fff3cd; color: #664d03; padding: 6px 10px; border-radius: 12px; font-size: 0.85rem; border: 1px solid #ffe69c; }
 
-/* 상단 우측 로그아웃 버튼 */
-#logoutBtn {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  z-index: 10;
-}
+/* 헤더 우측 버튼 영역 */
+.header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* 로그아웃 버튼을 맨 오른쪽으로 밀기 위한 보정: 앞 버튼과 간격 띄움 */
+.header-right .spacer { flex: 1 1 auto; }
+/* 로그아웃 전용 컬러(토마토) */
+#logoutBtn { background: #ff6347; }
+#logoutBtn:hover { background: #e4543b; }
 
 /* RFP/RFI 상단 탭 드롭다운 */
-.dropdown { position: relative; display: inline-block; margin-left: 8px; }
+.dropdown { position: relative; display: inline-block; }
 .dropdown > .add-row-btn { border-radius: 8px; }
 .announcement-menu {
   position: absolute;
@@ -405,6 +418,7 @@ body {
   max-height: 0;
   overflow: hidden;
   transition: all .25s ease;
+  z-index: 100;
 }
 .dropdown:hover .announcement-menu,
 .dropdown:focus-within .announcement-menu {
@@ -927,6 +941,10 @@ body {
     align-items: center;
     gap: 8px;
 }
+
+/* 링크형 버튼(주차 등록, 퀵 서비스) 밑줄 제거 및 일관 스타일 */
+.header-right a.add-row-btn { text-decoration: none !important; color: white !important; display: inline-flex; align-items: center; }
+.header-right a.add-row-btn:hover { text-decoration: none !important; }
 
 .add-row-btn:hover {
     background: #0056b3;
