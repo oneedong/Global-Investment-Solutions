@@ -6,6 +6,7 @@
   <title>Global Investment Solutions</title>
   <link rel="stylesheet" href="styles.css">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -20,6 +21,9 @@
               </div>
           </div>
           <div class="header-right">
+              <button class="add-row-btn" id="logoutBtn" title="로그아웃" style="margin-right: 12px;">
+                  <i class="fas fa-sign-out-alt"></i> 로그아웃
+              </button>
               <!-- 공고 검색 박스 -->
               <div class="announcement-search-box">
                   <h3>
@@ -46,7 +50,7 @@
       <div class="dashboard-container">
           <div class="dashboard-tabs">
               <button class="dashboard-tab active" data-dashboard="contacts">
-                  <i class="fas fa-address-book"></i> 연락처 관리
+                  <i class="fas fa-address-book"></i> 연락처 관리 (ex. RFP/RFI 뿌릴 때)
               </button>
               <button class="dashboard-tab" data-dashboard="rfp">
                   <i class="fas fa-file-contract"></i> RFP/RFI
@@ -264,6 +268,7 @@
                                   <th>제출 마감일</th>
                                   <th>참여한 GP</th>
                                   <th>최종 선정</th>
+                                  <th>메모</th>
                                   <th class="action-col">작업</th>
                               </tr>
                           </thead>
@@ -362,6 +367,7 @@
                                       <th>GP명</th>
                                       <th>영문 전체 명칭</th>
                                       <th>취급 전략</th>
+                                      <th>Contact</th>
                                       <th class="action-col">작업</th>
                                   </tr>
                               </thead>
@@ -448,9 +454,30 @@
           </div>
       </div>
 
+      <!-- 메모 편집 모달 -->
+      <div id="memo-modal" class="modal">
+          <div class="modal-content">
+              <div class="modal-header">
+                  <h3>메모</h3>
+                  <span class="close" onclick="closeMemoModal()">&times;</span>
+              </div>
+              <div class="modal-body">
+                  <div class="form-group">
+                      <label for="memo-textarea">메모를 입력하세요:</label>
+                      <textarea id="memo-textarea" rows="6"></textarea>
+                  </div>
+                  <div class="form-actions">
+                      <button type="button" class="btn-secondary" onclick="closeMemoModal()">취소</button>
+                      <button type="button" class="btn-primary" id="memo-save-btn">저장</button>
+                  </div>
+              </div>
+          </div>
+      </div>
+
       <!-- Firebase SDK -->
       <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
       <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+      <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
       
       <!-- Firebase 설정 -->
       <script src="firebase-config.js"></script>

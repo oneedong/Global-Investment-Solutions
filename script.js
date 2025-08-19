@@ -21,20 +21,17 @@ let institutionsData = {
 let gpsData = {};
 let selectedInstitutionCategory = '';
 let selectedGpLetter = 'A';
+// Firestore 핸들
+let db = null;
 
 // 기관 연락처(팝업 대시보드) 상태
 let institutionsContacts = {}; // key: institutionId, value: Contact[]
 let openContactsInstitutionId = null; // 현재 모달이 가리키는 기관 ID
+// GP 연락처 상태
+let gpContacts = {}; // key: gpId, value: Contact[]
+let openGpContactId = null;
 
-// 로그인 계정 정보(아이디/비밀번호 동일, 해시로 저장)
-const USERS = [
-  'se11058',
-  'se20142',
-  'se24018',
-  'se22289',
-  'se23162',
-  'set2229',
-];
+// Firebase Auth 사용으로 로컬 계정 상수는 사용하지 않음
 
 // 현재 페이지 경로 기준으로 안전하게 상대 경로 이동
 function goTo(path) {
@@ -76,6 +73,26 @@ document.addEventListener('DOMContentLoaded', function() {
     // 현재 페이지가 대시보드인지 판별 후에만 대시보드 초기화 수행
     const isDashboardPage = !!document.querySelector('.dashboard-container');
     if (isDashboardPage) {
+        // 인증 게이트: 미인증 시 랜딩으로
+        if (firebase && firebase.auth) {
+            firebase.auth().onAuthStateChanged((user) => {
+                if (!user) {
+                    goTo('landing.html');
+                }
+                // 로그아웃 버튼 바인딩
+                const logoutBtn = document.getElementById('logoutBtn');
+                if (logoutBtn) {
+                    logoutBtn.onclick = async () => {
+                        try {
+                            await firebase.auth().signOut();
+                            goTo('landing.html');
+                        } catch (e) {
+                            alert('로그아웃 실패: ' + (e && e.message ? e.message : '잠시 후 다시 시도해주세요.'));
+                        }
+                    };
+                }
+            });
+        }
         initializeTabs();
         initializeDashboardTabs();
         loadDataFromLocalStorage();
@@ -91,6 +108,8 @@ document.addEventListener('DOMContentLoaded', function() {
         renderGpsDashboard();
         initializeRealTimeSync();
         updateConnectionStatus();
+        // Firestore 초기화 및 리스너
+        initializeFirestoreSync();
         
         // 열 리사이즈 기능 초기화
         setTimeout(() => {
@@ -104,7 +123,7 @@ document.addEventListener('DOMContentLoaded', function() {
         scheduleAutoFitDashboard();
     }
 
-    // 아이디 저장 기능
+    // Firebase Auth 로그인 로직
     const loginForm = document.getElementById('loginForm');
     if (!loginForm) return;
     const useridInput = document.getElementById('userid');
@@ -119,32 +138,31 @@ document.addEventListener('DOMContentLoaded', function() {
       saveIdCheckbox.checked = true;
     }
 
+    // 인증 상태 관찰: 인증되면 메인으로, 아니면 대기
+    if (firebase && firebase.auth) {
+      firebase.auth().onAuthStateChanged((user) => {
+        if (user && window.location.pathname.endsWith('landing.html')) {
+          goTo('main.html');
+        }
+      });
+    }
+
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const userid = useridInput.value.trim();
+      const email = useridInput.value.trim();
       const password = passwordInput.value;
       loginError.textContent = '';
-
-      if (!USERS.includes(userid)) {
-        loginError.textContent = '존재하지 않는 계정입니다.';
-        return;
+      try {
+        await firebase.auth().signInWithEmailAndPassword(email, password);
+        if (saveIdCheckbox.checked) {
+          localStorage.setItem('savedUserId', email);
+        } else {
+          localStorage.removeItem('savedUserId');
+        }
+        goTo('main.html');
+      } catch (err) {
+        loginError.textContent = '로그인 실패: ' + (err && err.message ? err.message : '확인해주세요.');
       }
-      // 비밀번호 해시 비교 (localStorage에 있으면 그 해시, 없으면 아이디 해시)
-      const inputHash = await sha256(password);
-      const savedHash = localStorage.getItem(getUserPwKey(userid));
-      const correctHash = savedHash || await sha256(userid);
-      if (inputHash !== correctHash) {
-        loginError.textContent = '비밀번호가 올바르지 않습니다.';
-        return;
-      }
-      // 아이디 저장
-      if (saveIdCheckbox.checked) {
-        localStorage.setItem('savedUserId', userid);
-      } else {
-        localStorage.removeItem('savedUserId');
-      }
-      // 로그인 성공: 메인 대시보드(main.html)로 이동 (경로 안전 처리)
-      goTo('main.html');
     });
 });
 
@@ -428,7 +446,8 @@ function addRfpRow() {
         announcementDate: '',
         deadline: '',
         participatingGps: [],
-        selectedGps: []
+        selectedGps: [],
+        memos: []
     };
     
     rfpData.push(newRfp);
@@ -611,7 +630,7 @@ function renderRfpTable() {
     if (rfpData.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="9" class="empty-table">
+                <td colspan="10" class="empty-table">
                     <i class="fas fa-file-contract"></i>
                     <h3>등록된 공고가 없습니다</h3>
                     <p>공고 추가 버튼을 클릭하여 공고를 추가해보세요!</p>
@@ -629,6 +648,9 @@ function renderRfpTable() {
         }
         if (!Array.isArray(rfp.selectedGps)) {
             rfp.selectedGps = [];
+        }
+        if (!Array.isArray(rfp.memos)) {
+            rfp.memos = [];
         }
 
         // 대소문자 무시 정렬
@@ -661,6 +683,22 @@ function renderRfpTable() {
                     </button>
                 </span>
         `).join('');
+
+        // 메모 표시: 칩 대신 '메모 됨' 텍스트 + 툴팁, 편집 버튼
+        const memosSafe = Array.isArray(rfp.memos) ? rfp.memos : [];
+        const memoText = memosSafe.map(m => String(m)).join('\n');
+        const memoHtml = memosSafe.length > 0
+            ? `
+                <span class="memo-indicator" title="${escapeHtml(memoText)}">메모 됨</span>
+                <button class="add-gp-btn" onclick="editMemoOnRfp('${rfp.id}', 0)" title="메모 수정">
+                    <i class="fas fa-edit"></i>
+                </button>
+            `
+            : `
+                <button class="add-gp-btn" onclick="addMemoToRfp('${rfp.id}')" title="메모 추가">
+                    <i class="fas fa-plus"></i>
+                </button>
+            `;
         
         return `
             <tr data-rfp-id="${rfp.id}">
@@ -751,6 +789,11 @@ function renderRfpTable() {
                         <button class="add-gp-btn" onclick="addSelectedGpToRfp('${rfp.id}')" title="최종 선정 추가">
                             <i class="fas fa-plus"></i>
                         </button>
+                    </div>
+                </td>
+                <td class="memo-cell">
+                    <div class="memo-wrapper">
+                        ${memoHtml}
                     </div>
                 </td>
                 <td class="action-col">
@@ -864,6 +907,72 @@ function editSelectedGp(rfpId, oldGpName) {
             }
         }
     }
+}
+
+// ===== 메모 기능 =====
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function addMemoToRfp(rfpId) {
+    const rfp = rfpData.find(r => r.id === rfpId);
+    if (!rfp) return;
+    if (!Array.isArray(rfp.memos)) rfp.memos = [];
+    openMemoModal(rfpId, null, '');
+}
+
+function editMemoOnRfp(rfpId, index) {
+    const rfp = rfpData.find(r => r.id === rfpId);
+    if (!rfp || !Array.isArray(rfp.memos) || rfp.memos[index] === undefined) return;
+    openMemoModal(rfpId, index, String(rfp.memos[index]));
+}
+
+function removeMemoFromRfp(rfpId, index) {
+    const rfp = rfpData.find(r => r.id === rfpId);
+    if (!rfp || !Array.isArray(rfp.memos) || rfp.memos[index] === undefined) return;
+    if (!confirm('이 메모를 삭제하시겠습니까?')) return;
+    rfp.memos.splice(index, 1);
+    saveDataToLocalStorage();
+    renderRfpTable();
+    syncDataToServer();
+}
+
+// 모달 기반 메모 편집기
+function openMemoModal(rfpId, memoIndex, initialText) {
+    const modal = document.getElementById('memo-modal');
+    const textarea = document.getElementById('memo-textarea');
+    const saveBtn = document.getElementById('memo-save-btn');
+    if (!modal || !textarea || !saveBtn) return;
+    textarea.value = initialText || '';
+    modal.style.display = 'block';
+    textarea.focus();
+    // 기존 핸들러 제거 후 재바인딩
+    saveBtn.onclick = () => {
+        const text = (textarea.value || '').trim();
+        const rfp = rfpData.find(r => r.id === rfpId);
+        if (!rfp) { closeMemoModal(); return; }
+        if (!Array.isArray(rfp.memos)) rfp.memos = [];
+        if (memoIndex == null) {
+            if (!text) { closeMemoModal(); return; }
+            rfp.memos.push(text);
+        } else {
+            rfp.memos[memoIndex] = text;
+        }
+        saveDataToLocalStorage();
+        renderRfpTable();
+        syncDataToServer();
+        closeMemoModal();
+    };
+}
+
+function closeMemoModal() {
+    const modal = document.getElementById('memo-modal');
+    if (modal) modal.style.display = 'none';
 }
 
 // RFP 테이블 필터링
@@ -1433,6 +1542,13 @@ function renderGpsDashboard() {
             </td>
             <td class="action-col">
                 <div class="table-actions">
+                    <button class="add-institution-btn contact-open-btn" onclick="openGpContactsDashboard('${selectedGpLetter}','${gp.id}','${(gp.name || '').replace(/'/g, "&#39;")}')">
+                        <i class="fas fa-address-book"></i> Contact
+                    </button>
+                </div>
+            </td>
+            <td class="action-col">
+                <div class="table-actions">
                     <button class="institution-action-btn delete" onclick="deleteGpFromLetter('${selectedGpLetter}','${gp.id}')" title="GP 삭제">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -1811,6 +1927,7 @@ function saveDataToLocalStorage() {
     localStorage.setItem('institutionsData', JSON.stringify(institutionsData));
     localStorage.setItem('gpsData', JSON.stringify(gpsData));
     localStorage.setItem('institutionsContacts', JSON.stringify(institutionsContacts));
+    localStorage.setItem('gpContacts', JSON.stringify(gpContacts));
     
     // Firebase에 실시간 동기화
     syncDataToServer();
@@ -1855,6 +1972,10 @@ function loadDataFromLocalStorage() {
     if (savedContacts) {
         institutionsContacts = JSON.parse(savedContacts);
     }
+    const savedGpContacts = localStorage.getItem('gpContacts');
+    if (savedGpContacts) {
+        gpContacts = JSON.parse(savedGpContacts);
+    }
 
     // 전략 정규화 적용
     normalizeGpStrategies();
@@ -1895,6 +2016,9 @@ function initializeRealTimeSync() {
 						normalizeGpStrategies();
 						renderGpsDashboard();
 					}
+					if (data.gpContacts) {
+						gpContacts = data.gpContacts;
+					}
 					
 					updateConnectionStatus(true);
 				}
@@ -1916,6 +2040,31 @@ function initializeRealTimeSync() {
 	});
 }
 
+// Firestore 실시간 리스너(읽기 경로 예시)
+function initializeFirestoreSync() {
+    try {
+        if (!db && firebase && firebase.firestore) db = firebase.firestore();
+        const user = firebase.auth && firebase.auth().currentUser;
+        if (!db) return;
+        // 로그인 이후에만 리스너 붙이기
+        firebase.auth().onAuthStateChanged(u => {
+            if (!u) return;
+            // 예시: rfp 컬렉션 실시간 반영
+            db.collection('rfp').onSnapshot((snap) => {
+                const arr = [];
+                snap.forEach(doc => arr.push(doc.data()));
+                if (JSON.stringify(arr) !== JSON.stringify(rfpData)) {
+                    rfpData = arr;
+                    renderRfpTable();
+                }
+            });
+            // 필요 시 institutions/gps/tableData/contacts도 같은 방식으로 onSnapshot 추가 가능
+        });
+    } catch (e) {
+        console.warn('Firestore 리스너 초기화 오류:', e);
+    }
+}
+
 // Firebase로 데이터 동기화
 function syncDataToServer() {
     if (navigator.onLine && database) {
@@ -1927,6 +2076,7 @@ function syncDataToServer() {
                 institutionsData: institutionsData,
                 gpsData: gpsData,
                 institutionsContacts: institutionsContacts,
+                gpContacts: gpContacts,
                 lastUpdated: new Date().toISOString(),
                 updatedBy: generateUserId()
             };
@@ -1942,6 +2092,55 @@ function syncDataToServer() {
             console.error('Firebase 동기화 오류:', error);
             updateConnectionStatus(false);
         }
+    }
+
+    // Firestore에도 주요 데이터 스냅샷 저장(부분 업데이트)
+    try {
+        if (!db && firebase && firebase.firestore) db = firebase.firestore();
+        const user = firebase.auth && firebase.auth().currentUser;
+        if (db && user) {
+            const now = firebase.firestore.FieldValue.serverTimestamp();
+            const meta = { createdBy: user.uid, createdAt: now, lastUpdated: now };
+            // 컬렉션별 업서트(merge)
+            const upsert = async (col, id, payload) => {
+                await db.collection(col).doc(id).set({ ...payload, ...meta }, { merge: true });
+            };
+            // rfpData 배열을 문서 단위로 저장
+            (rfpData || []).forEach(r => {
+                const id = r.id || generateId();
+                upsert('rfp', id, { ...r, id });
+            });
+            // institutionsData 객체를 카테고리/아이템 단위로 저장
+            Object.entries(institutionsData || {}).forEach(([cat, list]) => {
+                (list || []).forEach(item => {
+                    const id = item.id || generateId();
+                    upsert('institutions', id, { ...item, category: cat, id });
+                });
+            });
+            // GP 데이터
+            Object.values(gpsData || {}).forEach(list => {
+                (list || []).forEach(item => {
+                    const id = item.id || generateId();
+                    upsert('gps', id, { ...item, id });
+                });
+            });
+            // 테이블(contacts 탭 데이터)
+            Object.entries(tableData || {}).forEach(([tab, rows]) => {
+                (rows || []).forEach(row => {
+                    const id = row.id || generateId();
+                    upsert('tableData', id, { ...row, tab, id });
+                });
+            });
+            // 연락처(기관/GP 통합 저장)
+            Object.entries(institutionsContacts || {}).forEach(([ownerId, list]) => {
+                (list || []).forEach(c => {
+                    const id = c.id || generateId();
+                    upsert('contacts', id, { ...c, ownerId, id });
+                });
+            });
+        }
+    } catch (e) {
+        console.warn('Firestore 동기화 스킵/오류:', e);
     }
 }
 
@@ -1973,6 +2172,9 @@ function syncDataFromServer() {
                         // 동기화 데이터에도 전략 정규화 적용
                         normalizeGpStrategies();
                         renderGpsDashboard();
+                    }
+                    if (data.gpContacts && JSON.stringify(data.gpContacts) !== JSON.stringify(gpContacts)) {
+                        gpContacts = data.gpContacts;
                     }
                     
                     if (data.institutionsContacts && JSON.stringify(data.institutionsContacts) !== JSON.stringify(institutionsContacts)) {
@@ -2375,6 +2577,19 @@ function closeInstitutionContactsModal() {
     if (modal) modal.style.display = 'none';
 }
 
+// GP 연락처: LP와 동일한 UI 재사용 (기관 연락처 모달을 공용으로 사용)
+function openGpContactsDashboard(letter, gpId, gpName = '') {
+    openContactsInstitutionId = `gp_${gpId}`; // 키 충돌 방지
+    // 제목 설정
+    const titleEl = document.getElementById('institution-contacts-title');
+    if (titleEl) {
+        titleEl.textContent = gpName ? `${gpName} - Contacts` : '기관 연락처';
+    }
+    const modal = document.getElementById('institution-contacts-modal');
+    if (modal) modal.style.display = 'block';
+    renderInstitutionContacts(openContactsInstitutionId);
+}
+
 // 팝업 대시보드: 연락처 렌더링
 function renderInstitutionContacts(institutionId) {
     const tbody = document.getElementById('institution-contacts-tbody');
@@ -2713,46 +2928,5 @@ window.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // 로그인 로직 수정: localStorage에 비밀번호가 있으면 그 해시로 비교
-  const loginForm = document.getElementById('loginForm');
-  if (!loginForm) return;
-  const useridInput = document.getElementById('userid');
-  const passwordInput = document.getElementById('password');
-  const saveIdCheckbox = document.getElementById('saveId');
-  const loginError = document.getElementById('loginError');
-
-  // 아이디 저장 불러오기
-  const savedId = localStorage.getItem('savedUserId');
-  if (savedId) {
-    useridInput.value = savedId;
-    saveIdCheckbox.checked = true;
-  }
-
-  loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const userid = useridInput.value.trim();
-    const password = passwordInput.value;
-    loginError.textContent = '';
-
-    if (!USERS.includes(userid)) {
-      loginError.textContent = '존재하지 않는 계정입니다.';
-      return;
-    }
-    // 비밀번호 해시 비교 (localStorage에 있으면 그 해시, 없으면 아이디 해시)
-    const inputHash = await sha256(password);
-    const savedHash = localStorage.getItem(getUserPwKey(userid));
-    const correctHash = savedHash || await sha256(userid);
-    if (inputHash !== correctHash) {
-      loginError.textContent = '비밀번호가 올바르지 않습니다.';
-      return;
-    }
-    // 아이디 저장
-    if (saveIdCheckbox.checked) {
-      localStorage.setItem('savedUserId', userid);
-    } else {
-      localStorage.removeItem('savedUserId');
-    }
-    // 로그인 성공: 메인 대시보드(main.html)로 이동 (경로 안전 처리)
-    goTo('main.html');
-  });
+  // 위에서 Firebase Auth 기반 로그인 로직을 이미 등록했으므로 중복 방지
 });

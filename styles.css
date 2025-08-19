@@ -371,6 +371,11 @@ body {
 .final-cell { text-align: center; }
 .final-cell .gp-list { justify-content: center; }
 
+/* 메모 열 가운데 정렬 */
+.memo-cell { text-align: center; }
+.memo-wrapper { display: inline-flex; align-items: center; gap: 8px; justify-content: center; }
+.memo-indicator { background: #fff3cd; color: #664d03; padding: 6px 10px; border-radius: 12px; font-size: 0.85rem; border: 1px solid #ffe69c; }
+
 /* 기관 관리 대시보드 */
 .institution-categories {
     display: grid;
@@ -1879,13 +1884,15 @@ body {
 #institution-contacts-table td:nth-child(8) { width: 8%; }
 
 #gps-detail-table th:nth-child(1),
-#gps-detail-table td:nth-child(1) { width: 25%; }
+#gps-detail-table td:nth-child(1) { width: auto; }
 #gps-detail-table th:nth-child(2),
-#gps-detail-table td:nth-child(2) { width: 35%; }
+#gps-detail-table td:nth-child(2) { width: auto; }
 #gps-detail-table th:nth-child(3),
-#gps-detail-table td:nth-child(3) { width: 10%; }
+#gps-detail-table td:nth-child(3) { width: auto; }
 #gps-detail-table th:nth-child(4),
-#gps-detail-table td:nth-child(4) { width: 12%; } 
+#gps-detail-table td:nth-child(4) { width: auto; text-align: center; }
+#gps-detail-table th:nth-child(5),
+#gps-detail-table td:nth-child(5) { width: auto; } 
 
 /* GP 테이블: 우측 작업열 고정 및 가로 스크롤 시 보임 유지 */
 #gps-detail-table th:last-child,
@@ -1919,9 +1926,9 @@ body {
 
 /* GP list 테이블 고정 레이아웃 및 텍스트 줄바꿈 */
 #gps-detail-table { 
-  table-layout: fixed !important; 
-  width: 100% !important;
-  max-width: 100% !important;
+  table-layout: fixed; 
+  width: 100%;
+  max-width: 100%;
 }
 
 #gps-detail-table th,
@@ -1933,6 +1940,7 @@ body {
   padding: 8px 4px !important;
   max-width: 0 !important;
   overflow: hidden !important;
+
 }
 .institutions-detail .table-container { 
   overflow: auto !important; 
@@ -2324,8 +2332,8 @@ select option { text-align: center; }
   overflow: hidden !important;
   text-align: center;
 }
-#gps-detail-table th:nth-child(1), #gps-detail-table td:nth-child(1) { width: 18%; }
-#gps-detail-table th:nth-child(2), #gps-detail-table td:nth-child(2) { width: 40%; }
-#gps-detail-table th:nth-child(3), #gps-detail-table td:nth-child(3) { width: 30%; }
-#gps-detail-table th:nth-child(4), #gps-detail-table td:nth-child(4) { width: 12%; }
+#gps-detail-table th:nth-child(1), #gps-detail-table td:nth-child(1) { width: auto; }
+#gps-detail-table th:nth-child(2), #gps-detail-table td:nth-child(2) { width: auto; }
+#gps-detail-table th:nth-child(3), #gps-detail-table td:nth-child(3) { width: auto; }
+#gps-detail-table th:nth-child(4), #gps-detail-table td:nth-child(4) { width: auto; }
 #gps-detail-table input, #gps-detail-table button { width: 100% !important; box-sizing: border-box; } 
