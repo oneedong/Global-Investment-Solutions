@@ -41,7 +41,9 @@ function goTo(path) {
   try {
     const isGitHubPages = /\.github\.io$/.test(window.location.hostname);
     if (isGitHubPages) {
-      const repoBase = '/Global-Investment-Solutions/';
+      // 현재 경로에서 리포지토리 베이스 동적 계산 (프로젝트 페이지/사용자 페이지 모두 대응)
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      const repoBase = pathParts.length > 0 ? `/${pathParts[0]}/` : '/';
       const url = window.location.origin + repoBase + path;
       window.location.replace(url); // 뒤로가기 시 로그인 페이지로 안 돌아오도록
       return;
@@ -71,32 +73,36 @@ document.addEventListener('DOMContentLoaded', function() {
         title.addEventListener('click', () => window.location.reload());
     }
 
-    initializeTabs();
-    initializeDashboardTabs();
-    loadDataFromLocalStorage();
-    
-    // 각 탭 데이터가 없으면 배열로 초기화 (안전 가드)
-    if (!Array.isArray(tableData['pe-pd'])) tableData['pe-pd'] = [];
-    if (!Array.isArray(tableData['real-estate'])) tableData['real-estate'] = [];
-    if (!Array.isArray(tableData['infra'])) tableData['infra'] = [];
-    
-    renderTable();
-    renderRfpTable();
-    renderInstitutionsDashboard();
-    renderGpsDashboard();
-    initializeRealTimeSync();
-    updateConnectionStatus();
-    
-    // 열 리사이즈 기능 초기화
-    setTimeout(() => {
-        initializeColumnResize();
-        // 저장된 열 너비 복원
-        document.querySelectorAll('.data-table').forEach(table => {
-            restoreColumnWidths(table);
-        });
-    }, 100);
+    // 현재 페이지가 대시보드인지 판별 후에만 대시보드 초기화 수행
+    const isDashboardPage = !!document.querySelector('.dashboard-container');
+    if (isDashboardPage) {
+        initializeTabs();
+        initializeDashboardTabs();
+        loadDataFromLocalStorage();
+        
+        // 각 탭 데이터가 없으면 배열로 초기화 (안전 가드)
+        if (!Array.isArray(tableData['pe-pd'])) tableData['pe-pd'] = [];
+        if (!Array.isArray(tableData['real-estate'])) tableData['real-estate'] = [];
+        if (!Array.isArray(tableData['infra'])) tableData['infra'] = [];
+        
+        renderTable();
+        renderRfpTable();
+        renderInstitutionsDashboard();
+        renderGpsDashboard();
+        initializeRealTimeSync();
+        updateConnectionStatus();
+        
+        // 열 리사이즈 기능 초기화
+        setTimeout(() => {
+            initializeColumnResize();
+            // 저장된 열 너비 복원
+            document.querySelectorAll('.data-table').forEach(table => {
+                restoreColumnWidths(table);
+            });
+        }, 100);
 
-    scheduleAutoFitDashboard();
+        scheduleAutoFitDashboard();
+    }
 
     // 아이디 저장 기능
     const loginForm = document.getElementById('loginForm');
