@@ -36,6 +36,18 @@ const USERS = [
   'set2229',
 ];
 
+// 현재 페이지 경로 기준으로 안전하게 상대 경로 이동
+function goTo(path) {
+  try {
+    const basePath = location.pathname.endsWith('/')
+      ? location.pathname
+      : location.pathname.replace(/[^\/]+$/, '');
+    location.href = basePath + path;
+  } catch (_) {
+    location.href = path; // fallback
+  }
+}
+
 // SHA-256 해시 함수 (브라우저 내장 SubtleCrypto 사용)
 async function sha256(str) {
   const encoder = new TextEncoder();
@@ -119,8 +131,8 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         localStorage.removeItem('savedUserId');
       }
-      // 로그인 성공: 메인 대시보드(main.html)로 이동
-      window.location.href = 'main.html';
+      // 로그인 성공: 메인 대시보드(main.html)로 이동 (경로 안전 처리)
+      goTo('main.html');
     });
 });
 
@@ -2728,7 +2740,7 @@ window.addEventListener('DOMContentLoaded', () => {
     } else {
       localStorage.removeItem('savedUserId');
     }
-    // 로그인 성공: 메인 대시보드(main.html)로 이동
-    window.location.href = 'main.html';
+    // 로그인 성공: 메인 대시보드(main.html)로 이동 (경로 안전 처리)
+    goTo('main.html');
   });
 });
