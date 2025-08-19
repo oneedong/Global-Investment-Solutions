@@ -21,29 +21,34 @@
               </div>
           </div>
           <div class="header-right">
-              <button class="add-row-btn" id="logoutBtn" title="로그아웃" style="margin-right: 12px;">
+              <!-- 로그아웃 -->
+              <button class="add-row-btn" id="logoutBtn" title="로그아웃">
                   <i class="fas fa-sign-out-alt"></i> 로그아웃
               </button>
-              <!-- 공고 검색 박스 -->
-              <div class="announcement-search-box">
-                  <h3>
-                      <i class="fas fa-search"></i>
-                      RFP/RFI 공고 검색
-                  </h3>
-                  <div class="announcement-links">
-                      <a href="https://www.kpasset.go.kr" target="_blank" class="announcement-link">
-                          <i class="fas fa-building"></i>
-                          <span class="announcement-link-text">우정사업본부 거래기관선정공고</span>
-                          <i class="fas fa-external-link-alt announcement-link-arrow"></i>
+              <!-- RFP/RFI 드롭다운 -->
+              <div class="dropdown" tabindex="0">
+                  <button class="add-row-btn">
+                      <i class="fas fa-search"></i> RFP/RFI 공고 검색
+                  </button>
+                  <div class="announcement-menu">
+                      <a class="announcement-item" href="https://www.kpasset.go.kr" target="_blank">
+                          <span class="left"><i class="fas fa-building"></i> 우정사업본부 거래기관선정공고</span>
+                          <i class="fas fa-external-link-alt"></i>
                       </a>
-                      <a href="https://www.kofia.or.kr/brd/m_212/list.do" target="_blank" class="announcement-link">
-                          <i class="fas fa-chart-line"></i>
-                          <span class="announcement-link-text">금융투자협회 공지사항</span>
-                          <i class="fas fa-external-link-alt announcement-link-arrow"></i>
+                      <a class="announcement-item" href="https://www.kofia.or.kr/brd/m_212/list.do" target="_blank">
+                          <span class="left"><i class="fas fa-chart-line"></i> 금융투자협회 공지사항</span>
+                          <i class="fas fa-external-link-alt"></i>
                       </a>
                   </div>
               </div>
-
+              <!-- 주차 등록 -->
+              <a class="add-row-btn" href="https://a21453.pweb.kr/login" target="_blank" title="ID: KL0, PW: 202208">
+                  <i class="fas fa-parking"></i> 주차 등록
+              </a>
+              <!-- 퀵 서비스 -->
+              <a class="add-row-btn" href="https://stnlogis.com/" target="_blank" title="회사선택: 8910, ID: se23162, PW: Password1!">
+                  <i class="fas fa-shipping-fast"></i> 퀵 서비스
+              </a>
           </div>
       </header>
 

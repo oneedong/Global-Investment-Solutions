@@ -26,6 +26,7 @@ body {
     align-items: center;
     margin-bottom: 10px;
     color: white;
+    position: relative; /* 상단 우측 로그아웃/탭 포지셔닝을 위해 */
 }
 
 .header-left {
@@ -375,6 +376,58 @@ body {
 .memo-cell { text-align: center; }
 .memo-wrapper { display: inline-flex; align-items: center; gap: 8px; justify-content: center; }
 .memo-indicator { background: #fff3cd; color: #664d03; padding: 6px 10px; border-radius: 12px; font-size: 0.85rem; border: 1px solid #ffe69c; }
+
+/* 상단 우측 로그아웃 버튼 */
+#logoutBtn {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 10;
+}
+
+/* RFP/RFI 상단 탭 드롭다운 */
+.dropdown { position: relative; display: inline-block; margin-left: 8px; }
+.dropdown > .add-row-btn { border-radius: 8px; }
+.announcement-menu {
+  position: absolute;
+  top: 44px;
+  right: 0;
+  transform: translateY(-6px);
+  background: #111827;
+  color: #e5edff;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 10px;
+  min-width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: all .25s ease;
+}
+.dropdown:hover .announcement-menu,
+.dropdown:focus-within .announcement-menu {
+  opacity: 1;
+  max-height: 300px;
+  transform: translateY(0);
+}
+.announcement-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #1f2937;
+  color: #e5edff;
+  text-decoration: none;
+  border: 1px solid #2b3443;
+}
+.announcement-item + .announcement-item { margin-top: 8px; }
+.announcement-item:hover { background: #253042; }
+.announcement-item .left { display: inline-flex; align-items: center; gap: 10px; }
+.announcement-item i { color: #82aaff; }
 
 /* 기관 관리 대시보드 */
 .institution-categories {
