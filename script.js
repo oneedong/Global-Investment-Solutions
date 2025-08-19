@@ -39,12 +39,10 @@ const USERS = [
 // 현재 페이지 경로 기준으로 안전하게 상대 경로 이동
 function goTo(path) {
   try {
-    const basePath = location.pathname.endsWith('/')
-      ? location.pathname
-      : location.pathname.replace(/[^\/]+$/, '');
-    location.href = basePath + path;
+    const url = new URL(path, window.location.href); // 현재 위치 기준으로 절대 URL 생성
+    window.location.assign(url.href);
   } catch (_) {
-    location.href = path; // fallback
+    window.location.href = path; // 최후 수단
   }
 }
 
