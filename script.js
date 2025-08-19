@@ -26,6 +26,24 @@ let selectedGpLetter = 'A';
 let institutionsContacts = {}; // key: institutionId, value: Contact[]
 let openContactsInstitutionId = null; // 현재 모달이 가리키는 기관 ID
 
+// 로그인 계정 정보(아이디/비밀번호 동일, 해시로 저장)
+const USERS = [
+  'se11058',
+  'se20142',
+  'se24018',
+  'se22289',
+  'se23162',
+  'set2229',
+];
+
+// SHA-256 해시 함수 (브라우저 내장 SubtleCrypto 사용)
+async function sha256(str) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', function() {
     // 제목 클릭 시 새로고침
@@ -61,6 +79,49 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 100);
 
     scheduleAutoFitDashboard();
+
+    // 아이디 저장 기능
+    const loginForm = document.getElementById('loginForm');
+    if (!loginForm) return;
+    const useridInput = document.getElementById('userid');
+    const passwordInput = document.getElementById('password');
+    const saveIdCheckbox = document.getElementById('saveId');
+    const loginError = document.getElementById('loginError');
+
+    // 아이디 저장 불러오기
+    const savedId = localStorage.getItem('savedUserId');
+    if (savedId) {
+      useridInput.value = savedId;
+      saveIdCheckbox.checked = true;
+    }
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const userid = useridInput.value.trim();
+      const password = passwordInput.value;
+      loginError.textContent = '';
+
+      if (!USERS.includes(userid)) {
+        loginError.textContent = '존재하지 않는 계정입니다.';
+        return;
+      }
+      // 비밀번호 해시 비교 (localStorage에 있으면 그 해시, 없으면 아이디 해시)
+      const inputHash = await sha256(password);
+      const savedHash = localStorage.getItem(getUserPwKey(userid));
+      const correctHash = savedHash || await sha256(userid);
+      if (inputHash !== correctHash) {
+        loginError.textContent = '비밀번호가 올바르지 않습니다.';
+        return;
+      }
+      // 아이디 저장
+      if (saveIdCheckbox.checked) {
+        localStorage.setItem('savedUserId', userid);
+      } else {
+        localStorage.removeItem('savedUserId');
+      }
+      // 로그인 성공: 내부 페이지로 이동
+      window.location.href = 'index.html';
+    });
 });
 
 // 탭 초기화
@@ -2554,3 +2615,120 @@ function saveAddressFromModal() {
     closeAddressModal();
     renderInstitutionsDashboard();
 }
+
+// 비밀번호 변경 기능
+function getUserPwKey(userid) {
+  return `userpw_${userid}`;
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  // ... 기존 로그인 코드 ...
+  // 비밀번호 변경 모달 관련
+  const openChangePw = document.getElementById('openChangePw');
+  const changePwModal = document.getElementById('changePwModal');
+  const closeChangePw = document.getElementById('closeChangePw');
+  const changePwForm = document.getElementById('changePwForm');
+  const changePwUser = document.getElementById('changePwUser');
+  const changePwCurrent = document.getElementById('changePwCurrent');
+  const changePwNew = document.getElementById('changePwNew');
+  const changePwNew2 = document.getElementById('changePwNew2');
+  const changePwError = document.getElementById('changePwError');
+  const changePwSuccess = document.getElementById('changePwSuccess');
+
+  if (openChangePw && changePwModal && closeChangePw && changePwForm) {
+    openChangePw.onclick = () => {
+      changePwModal.style.display = 'flex';
+      changePwUser.value = '';
+      changePwCurrent.value = '';
+      changePwNew.value = '';
+      changePwNew2.value = '';
+      changePwError.textContent = '';
+    };
+    closeChangePw.onclick = () => {
+      changePwModal.style.display = 'none';
+    };
+    changePwModal.onclick = (e) => {
+      if (e.target === changePwModal) changePwModal.style.display = 'none';
+    };
+    changePwForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const userid = changePwUser.value.trim();
+      const currentPw = changePwCurrent.value;
+      const newPw = changePwNew.value;
+      const newPw2 = changePwNew2.value;
+      changePwError.textContent = '';
+      if (!USERS.includes(userid)) {
+        changePwError.textContent = '존재하지 않는 계정입니다.';
+        return;
+      }
+      if (newPw.length < 4) {
+        changePwError.textContent = '새 비밀번호는 4자 이상이어야 합니다.';
+        return;
+      }
+      if (newPw !== newPw2) {
+        changePwError.textContent = '새 비밀번호가 일치하지 않습니다.';
+        return;
+      }
+      // 현재 비밀번호 확인 (localStorage에 있으면 그 해시, 없으면 아이디 해시)
+      const inputHash = await sha256(currentPw);
+      const savedHash = localStorage.getItem(getUserPwKey(userid));
+      const correctHash = savedHash || await sha256(userid);
+      if (inputHash !== correctHash) {
+        changePwError.textContent = '현재 비밀번호가 올바르지 않습니다.';
+        return;
+      }
+      // 새 비밀번호 해시로 저장
+      const newHash = await sha256(newPw);
+      localStorage.setItem(getUserPwKey(userid), newHash);
+      changePwError.style.color = '#0984e3';
+      changePwError.textContent = '비밀번호가 성공적으로 변경되었습니다!';
+      setTimeout(() => {
+        changePwModal.style.display = 'none';
+        changePwError.style.color = '#e74c3c';
+      }, 1200);
+    };
+  }
+
+  // 로그인 로직 수정: localStorage에 비밀번호가 있으면 그 해시로 비교
+  const loginForm = document.getElementById('loginForm');
+  if (!loginForm) return;
+  const useridInput = document.getElementById('userid');
+  const passwordInput = document.getElementById('password');
+  const saveIdCheckbox = document.getElementById('saveId');
+  const loginError = document.getElementById('loginError');
+
+  // 아이디 저장 불러오기
+  const savedId = localStorage.getItem('savedUserId');
+  if (savedId) {
+    useridInput.value = savedId;
+    saveIdCheckbox.checked = true;
+  }
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const userid = useridInput.value.trim();
+    const password = passwordInput.value;
+    loginError.textContent = '';
+
+    if (!USERS.includes(userid)) {
+      loginError.textContent = '존재하지 않는 계정입니다.';
+      return;
+    }
+    // 비밀번호 해시 비교 (localStorage에 있으면 그 해시, 없으면 아이디 해시)
+    const inputHash = await sha256(password);
+    const savedHash = localStorage.getItem(getUserPwKey(userid));
+    const correctHash = savedHash || await sha256(userid);
+    if (inputHash !== correctHash) {
+      loginError.textContent = '비밀번호가 올바르지 않습니다.';
+      return;
+    }
+    // 아이디 저장
+    if (saveIdCheckbox.checked) {
+      localStorage.setItem('savedUserId', userid);
+    } else {
+      localStorage.removeItem('savedUserId');
+    }
+    // 로그인 성공: 내부 페이지로 이동
+    window.location.href = 'index.html';
+  });
+});

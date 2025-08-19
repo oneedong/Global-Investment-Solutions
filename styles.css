@@ -1813,13 +1813,13 @@ body {
   background: #218838;
 }
 #institutions-detail-table th:nth-child(1),
-#institutions-detail-table td:nth-child(1) { width: 28%; }
+#institutions-detail-table td:nth-child(1) { width: 25%; }
 #institutions-detail-table th:nth-child(2),
-#institutions-detail-table td:nth-child(2) { width: 44%; }
+#institutions-detail-table td:nth-child(2) { width: 35%; }
 #institutions-detail-table th:nth-child(3),
-#institutions-detail-table td:nth-child(3) { width: 12%; }
+#institutions-detail-table td:nth-child(3) { width: 10%; }
 #institutions-detail-table th:nth-child(4),
-#institutions-detail-table td:nth-child(4) { width: 8%; }
+#institutions-detail-table td:nth-child(4) { width: 12%; }
 /* Contact 열이 존재하는 경우 버튼 칸 폭 */
 #institutions-detail-table th:nth-child(4):has(+ th),
 #institutions-detail-table td:nth-child(4):has(+ td) { width: 12%; }
@@ -1864,7 +1864,7 @@ body {
 #institution-contacts-table { min-width: 1200px; }
 #institution-contacts-table .number-col { width: 60px; }
 #institution-contacts-table th:nth-child(2),
-#institution-contacts-table td:nth-child(2) { width: 18%; }
+#institution-contacts-table td:nth-child(2) { width: 30%; }
 #institution-contacts-table th:nth-child(3),
 #institution-contacts-table td:nth-child(3) { width: 12%; }
 #institution-contacts-table th:nth-child(4),
@@ -1879,13 +1879,13 @@ body {
 #institution-contacts-table td:nth-child(8) { width: 8%; }
 
 #gps-detail-table th:nth-child(1),
-#gps-detail-table td:nth-child(1) { width: 32%; }
+#gps-detail-table td:nth-child(1) { width: 25%; }
 #gps-detail-table th:nth-child(2),
-#gps-detail-table td:nth-child(2) { width: 44%; }
+#gps-detail-table td:nth-child(2) { width: 35%; }
 #gps-detail-table th:nth-child(3),
-#gps-detail-table td:nth-child(3) { width: 16%; }
+#gps-detail-table td:nth-child(3) { width: 10%; }
 #gps-detail-table th:nth-child(4),
-#gps-detail-table td:nth-child(4) { width: 8%; } 
+#gps-detail-table td:nth-child(4) { width: 12%; } 
 
 /* GP 테이블: 우측 작업열 고정 및 가로 스크롤 시 보임 유지 */
 #gps-detail-table th:last-child,
@@ -1898,7 +1898,47 @@ body {
 
 /* 테이블 컨테이너가 가로 스크롤을 충분히 허용하도록 */
 #gps-detail-table { table-layout: fixed; }
-.institutions-detail .table-container { overflow: auto; }
+
+/* LP list 테이블 고정 레이아웃 및 텍스트 줄바꿈 */
+#institutions-detail-table { 
+  table-layout: fixed !important; 
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+#institutions-detail-table th,
+#institutions-detail-table td {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  vertical-align: middle !important;
+  padding: 8px 4px !important;
+  max-width: 0 !important;
+  overflow: hidden !important;
+}
+
+/* GP list 테이블 고정 레이아웃 및 텍스트 줄바꿈 */
+#gps-detail-table { 
+  table-layout: fixed !important; 
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+#gps-detail-table th,
+#gps-detail-table td {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  vertical-align: middle !important;
+  padding: 8px 4px !important;
+  max-width: 0 !important;
+  overflow: hidden !important;
+}
+.institutions-detail .table-container { 
+  overflow: auto !important; 
+  max-width: 100% !important;
+  width: 100% !important;
+}
 
 .sidebar-summary {
   display: flex;
@@ -2241,3 +2281,51 @@ select option { text-align: center; }
 /* 주소 버튼 */
 .address-edit-btn { background: #17a2b8; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
 .address-edit-btn:hover { background: #138496; } 
+
+/* LP list(기관 관리) 테이블 열 너비 및 줄바꿈 최적화 */
+#institutions-detail-table {
+  table-layout: fixed !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+#institutions-detail-table th, #institutions-detail-table td {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  vertical-align: middle !important;
+  padding: 8px 4px !important;
+  overflow: hidden !important;
+  text-align: center !important;
+}
+#institutions-detail-table th:nth-child(1), #institutions-detail-table td:nth-child(1) { width: 25% !important; }
+#institutions-detail-table th:nth-child(2), #institutions-detail-table td:nth-child(2) { width: 45% !important; }
+#institutions-detail-table th:nth-child(3), #institutions-detail-table td:nth-child(3) { width: 10% !important; }
+#institutions-detail-table th:nth-child(4), #institutions-detail-table td:nth-child(4) { width: 8% !important; }
+#institutions-detail-table th:nth-child(5), #institutions-detail-table td:nth-child(5) { width: 8% !important; }
+#institutions-detail-table th:nth-child(6), #institutions-detail-table td:nth-child(6) { width: 4% !important; }
+#institutions-detail-table input,
+#institutions-detail-table button {
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* GP list 테이블 열 너비 및 줄바꿈 최적화 */
+#gps-detail-table {
+  table-layout: fixed !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+#gps-detail-table th, #gps-detail-table td {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  vertical-align: middle !important;
+  padding: 8px 4px !important;
+  overflow: hidden !important;
+  text-align: center;
+}
+#gps-detail-table th:nth-child(1), #gps-detail-table td:nth-child(1) { width: 18%; }
+#gps-detail-table th:nth-child(2), #gps-detail-table td:nth-child(2) { width: 40%; }
+#gps-detail-table th:nth-child(3), #gps-detail-table td:nth-child(3) { width: 30%; }
+#gps-detail-table th:nth-child(4), #gps-detail-table td:nth-child(4) { width: 12%; }
+#gps-detail-table input, #gps-detail-table button { width: 100% !important; box-sizing: border-box; } 
