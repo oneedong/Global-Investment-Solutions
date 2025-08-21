@@ -2908,6 +2908,13 @@ function renderInstitutionContacts(institutionId) {
 	if ((!list || list.length === 0)) {
 		const raw = institutionId.startsWith('gp_') ? institutionId.slice(3) : institutionId;
 		list = institutionsContacts[raw] || gpContacts[institutionId] || gpContacts[raw] || [];
+		// 최종 폴백: 전체 연락처를 모아 표시 (표시 우선)
+		if ((!list || list.length === 0)) {
+			try {
+				const all = Object.values(institutionsContacts || {}).reduce((a, l) => a.concat(l || []), []);
+				if (Array.isArray(all) && all.length > 0) list = all;
+			} catch (_) {}
+		}
 	}
 
 	if (list.length === 0) {
