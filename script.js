@@ -2068,14 +2068,23 @@ function initializeRealTimeSync() {
 				renderGpsDashboard();
 				changed = true;
 			}
+			// contacts: 빈 맵으로 덮어쓰지 않도록 가드
+			const countMap = (m) => {
+				try { return Object.values(m || {}).reduce((a, l) => a + (Array.isArray(l) ? l.length : 0), 0); } catch (_) { return 0; }
+			};
 			if (data.gpContacts && JSON.stringify(data.gpContacts) !== JSON.stringify(gpContacts)) {
-				gpContacts = data.gpContacts;
-				changed = true;
+				const incoming = countMap(data.gpContacts);
+				const current = countMap(gpContacts);
+				if (!(incoming === 0 && current > 0)) { gpContacts = data.gpContacts; changed = true; }
 			}
 			if (data.institutionsContacts && JSON.stringify(data.institutionsContacts) !== JSON.stringify(institutionsContacts)) {
-				institutionsContacts = data.institutionsContacts;
-				if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
-				changed = true;
+				const incoming = countMap(data.institutionsContacts);
+				const current = countMap(institutionsContacts);
+				if (!(incoming === 0 && current > 0)) {
+					institutionsContacts = data.institutionsContacts;
+					if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
+					changed = true;
+				}
 			}
 			if (data.roadshowData && JSON.stringify(data.roadshowData) !== JSON.stringify(roadshowData)) {
 				roadshowData = data.roadshowData;
@@ -2181,7 +2190,12 @@ function initializeFirestoreSync() {
                     });
                     if (isGpId && !merged['gp_' + owner]) merged['gp_' + owner] = list;
                 });
-                institutionsContacts = merged;
+                // 빈 맵으로 덮어쓰지 않도록 가드
+                const incoming = Object.values(merged).reduce((a, l) => a + (Array.isArray(l)?l.length:0), 0);
+                const current = Object.values(institutionsContacts||{}).reduce((a, l) => a + (Array.isArray(l)?l.length:0), 0);
+                if (!(incoming === 0 && current > 0)) {
+                    institutionsContacts = merged;
+                }
                 // 보조 맵(gpContacts) 재생성
                 const gp = {};
                 Object.entries(merged).forEach(([owner, list]) => {
@@ -2193,7 +2207,11 @@ function initializeFirestoreSync() {
                     });
                     if (!isInst) gp[owner] = list;
                 });
-                gpContacts = gp;
+                const gpIncoming = Object.values(gp).reduce((a, l) => a + (Array.isArray(l)?l.length:0), 0);
+                const gpCurrent = Object.values(gpContacts||{}).reduce((a, l) => a + (Array.isArray(l)?l.length:0), 0);
+                if (!(gpIncoming === 0 && gpCurrent > 0)) {
+                    gpContacts = gp;
+                }
                 if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
             });
         });
@@ -2215,9 +2233,12 @@ function syncDataToServer() {
             // 비정상적으로 비어있으면 skip
             const total = (Object.values(tableData||{}).flat()||[]).length + (rfpData||[]).length +
                           Object.values(institutionsData||{}).reduce((a, l)=>a+(l||[]).length,0) +
-                          Object.values(gpsData||{}).reduce((a, l)=>a+(l||[]).length,0);
-            if (total < 3) {
-                console.warn('Guard: 빈 데이터 저장 방지.');
+                          Object.values(gpsData||{}).reduce((a, l)=>a+(l||[]).length,0) +
+                          Object.values(institutionsContacts||{}).reduce((a, l)=>a+(Array.isArray(l)?l.length:0),0) +
+                          Object.values(gpContacts||{}).reduce((a, l)=>a+(Array.isArray(l)?l.length:0),0);
+            // 연락처 복구 시 total이 작을 수 있어 최소치 완화
+            if (total < 1) {
+                console.warn('Guard: 데이터가 거의 비어 있습니다. 저장을 건너뜁니다.');
                 return;
             }
             database.ref('/').update(allData).then(() => {
@@ -2312,13 +2333,22 @@ function syncDataFromServer() {
                         normalizeGpStrategies();
                         renderGpsDashboard();
                     }
+                    const countMap = (m) => {
+                        try { return Object.values(m || {}).reduce((a, l) => a + (Array.isArray(l) ? l.length : 0), 0); } catch (_) { return 0; }
+                    };
                     if (data.gpContacts && JSON.stringify(data.gpContacts) !== JSON.stringify(gpContacts)) {
-                        gpContacts = data.gpContacts;
+                        const incoming = countMap(data.gpContacts);
+                        const current = countMap(gpContacts);
+                        if (!(incoming === 0 && current > 0)) gpContacts = data.gpContacts;
                     }
                     
                     if (data.institutionsContacts && JSON.stringify(data.institutionsContacts) !== JSON.stringify(institutionsContacts)) {
-                        institutionsContacts = data.institutionsContacts;
-                        if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
+                        const incoming = countMap(data.institutionsContacts);
+                        const current = countMap(institutionsContacts);
+                        if (!(incoming === 0 && current > 0)) {
+                            institutionsContacts = data.institutionsContacts;
+                            if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
+                        }
                     }
                     
                     if (data.roadshowData && JSON.stringify(data.roadshowData) !== JSON.stringify(roadshowData)) {
