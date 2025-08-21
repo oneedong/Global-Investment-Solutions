@@ -2396,11 +2396,15 @@ function syncDataToServer() {
                     upsert('tableData', id, { ...row, tab, id });
                 });
             });
-            // 연락처(기관/GP 통합 저장)
+            // 연락처(기관/GP 통합 저장) - ownerId 정규화(gp_ 접두사 제거)
             Object.entries(institutionsContacts || {}).forEach(([ownerId, list]) => {
+                const normalizedOwner = typeof ownerId === 'string' && ownerId.startsWith('gp_')
+                    ? ownerId.slice(3)
+                    : ownerId;
                 (list || []).forEach(c => {
                     const id = c.id || generateId();
-                    upsert('contacts', id, { ...c, ownerId, id });
+                    const payload = { ...c, id, ownerId: normalizedOwner };
+                    upsert('contacts', id, payload);
                 });
             });
         }
@@ -3842,6 +3846,9 @@ async function restoreFromFirestore() {
     renderGpsDashboard();
     renderRoadshow();
 
+    // Firestore 상의 연락처 문서 정규화/교정 (id, ownerId)
+    try { await normalizeAndFixContactsInFirestore(contactArr, instArr, gpArr); } catch (_) {}
+
     const counts = {
         inst: Object.values(institutionsData||{}).reduce((a,l)=>a+(l||[]).length,0),
         gps: Object.values(gpsData||{}).reduce((a,l)=>a+(l||[]).length,0),
@@ -4039,4 +4046,37 @@ async function safeSyncToRtdb() {
         lastUpdated: new Date().toISOString(), updatedBy: generateUserId()
     };
     await database.ref('/').update(payload);
+}
+
+async function normalizeAndFixContactsInFirestore(contactArr, instArr, gpArr) {
+    try {
+        if (!db && firebase && firebase.firestore) db = firebase.firestore();
+        if (!db) return;
+        // 1) 유효한 ownerId 목록 구성 (institutions + gps의 doc id)
+        const validOwnerIds = new Set();
+        (instArr || []).forEach(it => { if (it && it.__id) validOwnerIds.add(String(it.__id)); });
+        (gpArr || []).forEach(it => { if (it && it.__id) validOwnerIds.add(String(it.__id)); });
+
+        // 2) 각 contact에 대해 id, ownerId 정규화
+        const batch = db.batch();
+        (contactArr || []).forEach(c => {
+            const docId = c.__id || c.id;
+            if (!docId) return;
+            const ref = db.collection('contacts').doc(String(docId));
+            let owner = (c.ownerId || '').trim();
+            if (!owner && typeof c.id === 'string') owner = c.id; // 혹시 잘못 저장된 케이스 보정
+            if (owner.startsWith('gp_')) owner = owner.slice(3);
+            const payload = { id: String(docId), ownerId: owner };
+            // owner가 유효 id가 아니면 그대로 두되, 최소한 id 필드만 일치시킴
+            if (!validOwnerIds.has(owner)) {
+                // 나중 재매핑을 위해 lastUpdated만 찍고 id만 고정
+                batch.set(ref, { id: String(docId) }, { merge: true });
+            } else {
+                batch.set(ref, payload, { merge: true });
+            }
+        });
+        await batch.commit();
+    } catch (e) {
+        console.warn('normalizeAndFixContactsInFirestore 실패:', e);
+    }
 }
