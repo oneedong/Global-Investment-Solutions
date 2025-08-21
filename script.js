@@ -47,17 +47,10 @@ let openGpContactId = null;
 // 현재 페이지 경로 기준으로 안전하게 상대 경로 이동
 function goTo(path) {
   try {
-    const isGitHubPages = /\.github\.io$/.test(window.location.hostname);
-    if (isGitHubPages) {
-      // 현재 경로에서 리포지토리 베이스 동적 계산 (프로젝트 페이지/사용자 페이지 모두 대응)
-      const pathParts = window.location.pathname.split('/').filter(Boolean);
-      const repoBase = pathParts.length > 0 ? `/${pathParts[0]}/` : '/';
-      const url = window.location.origin + repoBase + path;
-      window.location.replace(url); // 뒤로가기 시 로그인 페이지로 안 돌아오도록
-      return;
-    }
-    // 로컬/기타 서버 환경
-    const url = new URL(path, window.location.href);
+    // 현재 파일의 디렉터리를 기준으로 상대 경로 생성 (모든 호스팅에서 안전)
+    const href = window.location.href.replace(/[?#].*$/, '');
+    const baseDir = href.endsWith('/') ? href : href.replace(/[^/]*$/, '');
+    const url = new URL(path, baseDir);
     window.location.assign(url.href);
   } catch (_) {
     window.location.href = path;
@@ -3632,7 +3625,7 @@ async function restoreFromFirestore() {
     (contactArr || []).forEach(c => {
         const owner = (c.ownerId || '').trim();
         if (!owner) { unassignedContacts.push(c); return; }
-        (institutionsContacts[owner] = institutionsContacts[owner] || []).push(c);
+            (institutionsContacts[owner] = institutionsContacts[owner] || []).push(c);
         // GP id와 매칭되면 별칭 키도 추가
         let isGp = false;
         Object.values(gpsData).forEach(list => {
