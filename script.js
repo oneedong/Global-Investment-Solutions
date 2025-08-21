@@ -1943,6 +1943,26 @@ function getDefaultInstitutionsData() {
     };
 }
 
+// 연락처 맵 병합: {ownerId: Contact[]} 형태를 안전하게 합칩니다.
+function mergeContactsMaps(baseMap, incomingMap) {
+    const out = { ...(baseMap || {}) };
+    const incoming = incomingMap || {};
+    Object.entries(incoming).forEach(([owner, list]) => {
+        const existing = Array.isArray(out[owner]) ? out[owner] : [];
+        const seen = new Set(existing.map(c => c && c.id));
+        const merged = existing.slice();
+        (list || []).forEach(c => {
+            const cid = c && c.id;
+            if (!cid || !seen.has(cid)) {
+                merged.push(c);
+                if (cid) seen.add(cid);
+            }
+        });
+        out[owner] = merged;
+    });
+    return out;
+}
+
 // LP 데이터 비어있는지 확인
 function isInstitutionsDataEmpty(data) {
     const categories = Object.keys(data || {});
@@ -2072,15 +2092,29 @@ function initializeRealTimeSync() {
 			const countMap = (m) => {
 				try { return Object.values(m || {}).reduce((a, l) => a + (Array.isArray(l) ? l.length : 0), 0); } catch (_) { return 0; }
 			};
-			if (data.gpContacts && JSON.stringify(data.gpContacts) !== JSON.stringify(gpContacts)) {
+			if (data.gpContacts) {
 				const incoming = countMap(data.gpContacts);
 				const current = countMap(gpContacts);
-				if (!(incoming === 0 && current > 0)) { gpContacts = data.gpContacts; changed = true; }
+				if (incoming === 0 && current > 0) {
+					// ignore empty overwrite
+				} else if (incoming > 0 && current > 0) {
+					gpContacts = mergeContactsMaps(gpContacts, data.gpContacts);
+					changed = true;
+				} else if (incoming > 0) {
+					gpContacts = data.gpContacts;
+					changed = true;
+				}
 			}
-			if (data.institutionsContacts && JSON.stringify(data.institutionsContacts) !== JSON.stringify(institutionsContacts)) {
+			if (data.institutionsContacts) {
 				const incoming = countMap(data.institutionsContacts);
 				const current = countMap(institutionsContacts);
-				if (!(incoming === 0 && current > 0)) {
+				if (incoming === 0 && current > 0) {
+					// ignore empty overwrite
+				} else if (incoming > 0 && current > 0) {
+					institutionsContacts = mergeContactsMaps(institutionsContacts, data.institutionsContacts);
+					if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
+					changed = true;
+				} else if (incoming > 0) {
 					institutionsContacts = data.institutionsContacts;
 					if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
 					changed = true;
@@ -2193,7 +2227,11 @@ function initializeFirestoreSync() {
                 // 빈 맵으로 덮어쓰지 않도록 가드
                 const incoming = Object.values(merged).reduce((a, l) => a + (Array.isArray(l)?l.length:0), 0);
                 const current = Object.values(institutionsContacts||{}).reduce((a, l) => a + (Array.isArray(l)?l.length:0), 0);
-                if (!(incoming === 0 && current > 0)) {
+                if (incoming === 0 && current > 0) {
+                    // ignore
+                } else if (incoming > 0 && current > 0) {
+                    institutionsContacts = mergeContactsMaps(institutionsContacts, merged);
+                } else {
                     institutionsContacts = merged;
                 }
                 // 보조 맵(gpContacts) 재생성
@@ -2209,9 +2247,15 @@ function initializeFirestoreSync() {
                 });
                 const gpIncoming = Object.values(gp).reduce((a, l) => a + (Array.isArray(l)?l.length:0), 0);
                 const gpCurrent = Object.values(gpContacts||{}).reduce((a, l) => a + (Array.isArray(l)?l.length:0), 0);
-                if (!(gpIncoming === 0 && gpCurrent > 0)) {
+                if (gpIncoming === 0 && gpCurrent > 0) {
+                    // ignore
+                } else if (gpIncoming > 0 && gpCurrent > 0) {
+                    gpContacts = mergeContactsMaps(gpContacts, gp);
+                } else {
                     gpContacts = gp;
                 }
+                // Firestore 수신 시 RTDB로 즉시 반영해 다른 탭도 맞춰줌
+                try { safeSyncToRtdb(); } catch (_) {}
                 if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
             });
         });
