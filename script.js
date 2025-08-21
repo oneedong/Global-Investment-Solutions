@@ -101,6 +101,23 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     };
                 }
+                // 복구 버튼 바인딩
+                const restoreBtn = document.getElementById('restoreBtn');
+                if (restoreBtn) {
+                    // 권한자만 보이도록 처리
+                    const canRestore = !!(user && user.email && user.email.toLowerCase() === 'dongmin.won@kbfg.com');
+                    restoreBtn.style.display = canRestore ? '' : 'none';
+                    restoreBtn.onclick = async () => {
+                        if (!canRestore) { alert('복구 권한이 없습니다.'); return; }
+                        try {
+                            await restoreFromFirestore();
+                            alert('복구가 완료되었습니다.');
+                        } catch (e) {
+                            console.error(e);
+                            alert('복구 실패: ' + (e && e.message ? e.message : 'Console을 확인해주세요.'));
+                        }
+                    };
+                }
             });
         }
         initializeTabs();
@@ -2118,20 +2135,21 @@ function initializeFirestoreSync() {
 function syncDataToServer() {
     if (navigator.onLine && database) {
         try {
-            // 모든 데이터를 Firebase에 업로드
+            // 부분 업데이트 + 가드 적용
             const allData = {
-                tableData: tableData,
-                rfpData: rfpData,
-                institutionsData: institutionsData,
-                gpsData: gpsData,
-                institutionsContacts: institutionsContacts,
-                gpContacts: gpContacts,
-                roadshowData: roadshowData,
-                lastUpdated: new Date().toISOString(),
-                updatedBy: generateUserId()
+                tableData, rfpData, institutionsData, gpsData,
+                institutionsContacts, gpContacts, roadshowData,
+                lastUpdated: new Date().toISOString(), updatedBy: generateUserId()
             };
-            
-            database.ref('/').set(allData).then(() => {
+            // 비정상적으로 비어있으면 skip
+            const total = (Object.values(tableData||{}).flat()||[]).length + (rfpData||[]).length +
+                          Object.values(institutionsData||{}).reduce((a, l)=>a+(l||[]).length,0) +
+                          Object.values(gpsData||{}).reduce((a, l)=>a+(l||[]).length,0);
+            if (total < 3) {
+                console.warn('Guard: 빈 데이터 저장 방지.');
+                return;
+            }
+            database.ref('/').update(allData).then(() => {
                 console.log('데이터가 Firebase에 동기화되었습니다.');
                 updateConnectionStatus(true);
             }).catch((error) => {
@@ -3434,3 +3452,80 @@ function closeRoadshowMeetingModal() {
         if (d === 'roadshow') setTimeout(renderRoadshow, 0);
     };
 })();
+
+// Firestore → 로컬 → RTDB 복구
+async function restoreFromFirestore() {
+    const current = firebase && firebase.auth && firebase.auth().currentUser;
+    if (!(current && current.email && current.email.toLowerCase() === 'dongmin.won@kbfg.com')) {
+        throw new Error('복구 권한이 없습니다.');
+    }
+    if (!db && firebase && firebase.firestore) db = firebase.firestore();
+    if (!db) throw new Error('Firestore 초기화 실패');
+    const snapAll = async (col) => {
+        const arr = [];
+        const qs = await db.collection(col).get();
+        qs.forEach(d => arr.push(d.data()));
+        return arr;
+    };
+    const [rfpArr, instArr, gpArr, tableArr, contactArr] = await Promise.all([
+        snapAll('rfp'), snapAll('institutions'), snapAll('gps'), snapAll('tableData'), snapAll('contacts')
+    ]);
+
+    // 로컬 구조에 재구성
+    rfpData = rfpArr || [];
+    institutionsData = {};
+    (instArr || []).forEach(it => {
+        const cat = it.category || '기타';
+        if (!institutionsData[cat]) institutionsData[cat] = [];
+        institutionsData[cat].push(it);
+    });
+    gpsData = {};
+    (gpArr || []).forEach(it => {
+        const L = (it.name || 'A').charAt(0).toUpperCase();
+        if (!gpsData[L]) gpsData[L] = [];
+        gpsData[L].push(it);
+    });
+    tableData = { 'pe-pd': [], 'real-estate': [], infra: [] };
+    (tableArr || []).forEach(it => {
+        if (!tableData[it.tab]) tableData[it.tab] = [];
+        tableData[it.tab].push(it);
+    });
+    institutionsContacts = {};
+    (contactArr || []).forEach(c => {
+        const key = c.ownerId || 'unknown';
+        if (!institutionsContacts[key]) institutionsContacts[key] = [];
+        institutionsContacts[key].push(c);
+    });
+    // Roadshow는 Firestore 스냅샷이 없을 수 있으므로 유지
+    saveDataToLocalStorage();
+    renderTable();
+    renderRfpTable();
+    renderInstitutionsDashboard();
+    renderGpsDashboard();
+    renderRoadshow();
+    // RTDB에 업로드(안전 저장)
+    await safeSyncToRtdb();
+}
+
+// 안전 저장: 부분 업데이트 + 빈 데이터 가드
+async function safeSyncToRtdb() {
+    if (!navigator.onLine || !database) return;
+    const counts = {
+        table: (Object.values(tableData||{}).flat()||[]).length,
+        rfp: (rfpData||[]).length,
+        inst: Object.values(institutionsData||{}).reduce((a, l) => a + (l||[]).length, 0),
+        gps: Object.values(gpsData||{}).reduce((a, l) => a + (l||[]).length, 0),
+    };
+    // 임계치 미만이면 저장 차단 (사고 방지)
+    const total = counts.table + counts.rfp + counts.inst + counts.gps;
+    if (total < 3) { // 거의 빈 스냅샷은 저장하지 않음
+        console.warn('Guard: 데이터가 비어 있어 RTDB 저장을 건너뜁니다.');
+        return;
+    }
+    const payload = {
+        tableData, rfpData, institutionsData, gpsData,
+        institutionsContacts, gpContacts, roadshowData,
+        lastUpdated: new Date().toISOString(), updatedBy: generateUserId()
+    };
+    await database.ref('/').update(payload);
+}
