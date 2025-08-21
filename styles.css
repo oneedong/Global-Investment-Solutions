@@ -2439,8 +2439,10 @@ select option { text-align: center; }
 .fund-list li { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center; }
 .fund-list input { flex: 1; padding: 8px 10px; border: none; box-shadow: none; background: transparent; border-radius: 0; text-align: center; font-size: 1.05rem; }
 .fund-list input:focus { outline: none; border-bottom: 2px solid #e9ecef; }
+.fund-list li.active input { font-weight: 700; color: #2c3e50; }
 
 /* Excel-like grid table for roadshow */
+.roadshow-grid { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e9ecef; overflow: auto; min-height: 420px; }
 .schedule-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .schedule-table thead th { position: sticky; top: 0; background: #f0f3f7; z-index: 2; border-bottom: 2px solid #cfd8e3; text-align: center; padding: 8px; font-weight: 700; }
 .schedule-table tbody td, .schedule-table thead th { border-right: 1px solid #dfe6ef; }

@@ -33,6 +33,7 @@ let roadshowData = {
 };
 // 선택 상태
 let openRoadshowMeetingId = null;
+let selectedFundId = null;
 
 // 기관 연락처(팝업 대시보드) 상태
 let institutionsContacts = {}; // key: institutionId, value: Contact[]
@@ -3142,12 +3143,21 @@ function renderRoadshow() {
     // 좌측 펀드 목록
     if (fundList) {
         const funds = roadshowData.funds || [];
+        if (!selectedFundId && funds[0]) selectedFundId = funds[0].id;
         fundList.innerHTML = funds.map(f => `
-            <li data-fund-id="${f.id}">
+            <li data-fund-id="${f.id}" class="${selectedFundId===f.id?'active':''}">
                 <input type="text" value="${f.name || ''}" placeholder="펀드명" onchange="updateRoadshowFund('${f.id}', this.value)">
                 <button class="table-action-btn delete" title="삭제" onclick="deleteRoadshowFund('${f.id}')"><i class="fas fa-trash"></i></button>
             </li>
         `).join('');
+        // 클릭 시 선택 펀드 변경
+        fundList.querySelectorAll('li').forEach(li => {
+            li.addEventListener('click', (e) => {
+                if ((e.target && e.target.tagName === 'INPUT') || (e.target && e.target.closest('button'))) return;
+                selectedFundId = li.getAttribute('data-fund-id');
+                renderRoadshow();
+            });
+        });
     }
 
     // 헤더
@@ -3163,7 +3173,7 @@ function renderRoadshow() {
     }).join('');
 
     // Investor 표 렌더링
-    const investors = roadshowData.investors || [];
+    const investors = (roadshowData.investors || []).filter(inv => (inv.fundId || null) === (selectedFundId || null));
     invBody.innerHTML = investors.map((inv, idx) => `
         <tr data-rs-investor-id="${inv.id}">
             <td class="number-col">${idx + 1}</td>
@@ -3245,7 +3255,7 @@ function openRoadshowMeetingModal(opts = {}) {
         m = (roadshowData.meetings || []).find(x => x.id === opts.id);
     }
     if (m) {
-        fundSel.value = m.fundId || (funds[0]?.id || '');
+        fundSel.value = m.fundId || selectedFundId || (funds[0]?.id || '');
         daySel.value = m.dayId;
         startSel.value = m.start;
         endSel.value = m.end || m.start;
@@ -3257,7 +3267,7 @@ function openRoadshowMeetingModal(opts = {}) {
         kbInput.value = Array.isArray(m.kbSecurities) ? m.kbSecurities.join(', ') : (m.kbSecurities || '');
         openRoadshowMeetingId = m.id;
     } else {
-        fundSel.value = (funds[0]?.id || '');
+        fundSel.value = selectedFundId || (funds[0]?.id || '');
         daySel.value = (opts.dayId && days.some(d => d.id === opts.dayId)) ? opts.dayId : (days[0]?.id || '');
         startSel.value = opts.start || times[0];
         endSel.value = opts.end || opts.start || times[0];
@@ -3416,7 +3426,7 @@ function addRoadshowInvestor() {
     const name = prompt('Investor 이름을 입력하세요:');
     if (!name || !name.trim()) return;
     const id = 'inv_' + Date.now();
-    roadshowData.investors.push({ id, investor: name.trim(), type: '', address: '', lpAttendees: '', kbSecurities: '' });
+    roadshowData.investors.push({ id, fundId: selectedFundId || null, investor: name.trim(), type: '', address: '', lpAttendees: '', kbSecurities: '' });
     saveDataToLocalStorage();
     renderRoadshow();
 }
@@ -3471,7 +3481,28 @@ async function restoreFromFirestore() {
         snapAll('rfp'), snapAll('institutions'), snapAll('gps'), snapAll('tableData'), snapAll('contacts')
     ]);
 
-    // 로컬 구조에 재구성
+    let fsCounts = { rfp: rfpArr.length, inst: instArr.length, gps: gpArr.length, table: tableArr.length, contacts: contactArr.length };
+
+    // Firestore가 비어있으면 RTDB 스냅샷으로 복구 시도
+    if ((fsCounts.rfp + fsCounts.inst + fsCounts.gps + fsCounts.table + fsCounts.contacts) === 0 && database) {
+        const snap = await database.ref('/').once('value');
+        const data = snap.val() || {};
+        if (data.tableData || data.rfpData || data.institutionsData || data.gpsData) {
+            tableData = data.tableData || tableData;
+            rfpData = data.rfpData || rfpData;
+            institutionsData = data.institutionsData || institutionsData;
+            gpsData = data.gpsData || gpsData;
+            institutionsContacts = data.institutionsContacts || {};
+            gpContacts = data.gpContacts || {};
+            saveDataToLocalStorage();
+            renderTable(); renderRfpTable(); renderInstitutionsDashboard(); renderGpsDashboard(); renderRoadshow();
+            await safeSyncToRtdb();
+            alert('Firestore에 백업이 없어 RTDB 스냅샷으로 복구했습니다.');
+            return;
+        }
+    }
+
+    // 로컬 구조에 재구성 (Firestore)
     rfpData = rfpArr || [];
     institutionsData = {};
     (instArr || []).forEach(it => {
@@ -3490,21 +3521,35 @@ async function restoreFromFirestore() {
         if (!tableData[it.tab]) tableData[it.tab] = [];
         tableData[it.tab].push(it);
     });
+    // 연락처 재구성 (ownerId 기준으로 묶기)
     institutionsContacts = {};
+    gpContacts = {};
     (contactArr || []).forEach(c => {
-        const key = c.ownerId || 'unknown';
-        if (!institutionsContacts[key]) institutionsContacts[key] = [];
-        institutionsContacts[key].push(c);
+        const owner = c.ownerId || '';
+        if (owner.startsWith('gp_')) {
+            const key = owner; // 그대로 키 사용 (gp_ 접두 포함)
+            if (!gpContacts[key]) gpContacts[key] = [];
+            gpContacts[key].push(c);
+        } else {
+            const key = owner || 'unknown';
+            if (!institutionsContacts[key]) institutionsContacts[key] = [];
+            institutionsContacts[key].push(c);
+        }
     });
-    // Roadshow는 Firestore 스냅샷이 없을 수 있으므로 유지
+
+    // 카테고리 유효화
+    const cats = Object.keys(institutionsData || {});
+    if (!cats.includes(selectedInstitutionCategory)) selectedInstitutionCategory = cats[0] || '';
+
     saveDataToLocalStorage();
     renderTable();
     renderRfpTable();
     renderInstitutionsDashboard();
     renderGpsDashboard();
     renderRoadshow();
-    // RTDB에 업로드(안전 저장)
     await safeSyncToRtdb();
+
+    alert(`복구 완료\n- RFP: ${fsCounts.rfp}\n- 기관: ${fsCounts.inst}\n- GP: ${fsCounts.gps}\n- 연락처: ${fsCounts.contacts}\n- 연락처(owner 기준 재구성)`);
 }
 
 // 안전 저장: 부분 업데이트 + 빈 데이터 가드
