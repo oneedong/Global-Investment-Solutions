@@ -47,7 +47,18 @@ let openGpContactId = null;
 // 현재 페이지 경로 기준으로 안전하게 상대 경로 이동
 function goTo(path) {
   try {
-    // 현재 파일의 디렉터리를 기준으로 상대 경로 생성 (모든 호스팅에서 안전)
+    const isGitHubPages = /\.github\.io$/.test(window.location.hostname);
+    if (isGitHubPages) {
+      // GitHub Pages: 사용자 페이지(/)와 프로젝트 페이지(/repo/) 구분
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      const first = parts[0] || '';
+      const looksLikeFile = /\./.test(first); // landing.html 같은 파일명
+      const repoBase = (!first || looksLikeFile) ? '/' : `/${first}/`;
+      const url = window.location.origin + repoBase + path;
+      window.location.replace(url);
+      return;
+    }
+    // 일반 호스팅: 현재 파일의 디렉터리 기준 상대 경로
     const href = window.location.href.replace(/[?#].*$/, '');
     const baseDir = href.endsWith('/') ? href : href.replace(/[^/]*$/, '');
     const url = new URL(path, baseDir);
