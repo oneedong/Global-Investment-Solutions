@@ -2764,7 +2764,11 @@ function openGpContactsDashboard(letter, gpId, gpName = '') {
 function renderInstitutionContacts(institutionId) {
 	const tbody = document.getElementById('institution-contacts-tbody');
 	if (!tbody) return;
-	const list = institutionsContacts[institutionId] || [];
+	let list = institutionsContacts[institutionId] || [];
+	if ((!list || list.length === 0)) {
+		const raw = institutionId.startsWith('gp_') ? institutionId.slice(3) : institutionId;
+		list = institutionsContacts[raw] || gpContacts[institutionId] || gpContacts[raw] || [];
+	}
 
 	if (list.length === 0) {
 		tbody.innerHTML = `
@@ -2876,7 +2880,12 @@ function updateInstitutionContact(institutionId, contactId, field, value) {
 // 팝업 대시보드: 연락처 삭제
 function deleteInstitutionContact(institutionId, contactId) {
     if (!confirm('이 연락처를 삭제할까요?')) return;
+    // 두 저장소 모두에서 삭제 시도
     institutionsContacts[institutionId] = (institutionsContacts[institutionId] || []).filter(c => c.id !== contactId);
+    const raw = institutionId.startsWith('gp_') ? institutionId.slice(3) : institutionId;
+    institutionsContacts[raw] = (institutionsContacts[raw] || []).filter(c => c.id !== contactId);
+    gpContacts[institutionId] = (gpContacts[institutionId] || []).filter(c => c.id !== contactId);
+    gpContacts[raw] = (gpContacts[raw] || []).filter(c => c.id !== contactId);
     saveDataToLocalStorage();
     try { syncDataToServer(); } catch (_) {}
     renderInstitutionContacts(institutionId);
