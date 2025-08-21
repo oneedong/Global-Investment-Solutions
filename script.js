@@ -3685,8 +3685,36 @@ async function recoverContactsForOwner(ownerId) {
         return true;
     } catch (e) {
         console.warn('recoverContactsForOwner 실패:', e);
-        return false;
+        // Firestore 실패 시 RTDB 폴백 시도
+        try {
+            const ok = await recoverContactsForOwnerFromRtdb(ownerId);
+            return !!ok;
+        } catch (_) { return false; }
     }
+}
+
+// RTDB 폴백: 특정 owner의 연락처를 RTDB에서 로드하여 주입
+async function recoverContactsForOwnerFromRtdb(ownerId) {
+    return new Promise((resolve) => {
+        if (!database) return resolve(false);
+        database.ref('/').once('value').then((snapshot) => {
+            const data = snapshot.val() || {};
+            const raw = ownerId.startsWith('gp_') ? ownerId.slice(3) : ownerId;
+            const maps = [data.institutionsContacts || {}, data.gpContacts || {}];
+            let found = null;
+            for (const m of maps) {
+                if (m[ownerId]) { found = m[ownerId]; break; }
+                if (m[raw]) { found = m[raw]; break; }
+                if (m['gp_' + raw]) { found = m['gp_' + raw]; break; }
+            }
+            if (!found || !Array.isArray(found) || found.length === 0) return resolve(false);
+            // 로컬 키로 주입
+            institutionsContacts[ownerId] = found;
+            try { saveDataToLocalStorage(); } catch (_) {}
+            try { syncDataToServer(); } catch (_) {}
+            resolve(true);
+        }).catch(() => resolve(false));
+    });
 }
 
 // 특정 기관의 주소 필드를 Firestore의 institutions 문서에서 복구
@@ -3736,8 +3764,62 @@ async function recoverInstitutionAddress(institutionId) {
         return false;
     } catch (e) {
         console.warn('recoverInstitutionAddress 실패:', e);
-        return false;
+        // Firestore 실패 시 RTDB 폴백 시도
+        try {
+            const ok = await recoverInstitutionAddressFromRtdb(institutionId);
+            return !!ok;
+        } catch (_) { return false; }
     }
+}
+
+// RTDB 폴백: institutionsData에서 해당 기관의 주소를 찾아 주입
+async function recoverInstitutionAddressFromRtdb(institutionId) {
+    return new Promise((resolve) => {
+        if (!database) return resolve(false);
+        database.ref('/institutionsData').once('value').then((snapshot) => {
+            const instData = snapshot.val() || {};
+            // 1) id로 탐색
+            let item = null; let catKey = null;
+            Object.keys(instData).forEach(cat => {
+                const list = instData[cat] || [];
+                (list || []).forEach(it => { if (!item && it && it.id === institutionId) { item = it; catKey = cat; } });
+            });
+            // 2) 그래도 없으면 로컬 이름으로 탐색
+            if (!item) {
+                let localName = '';
+                Object.values(institutionsData || {}).forEach(list => {
+                    (list || []).forEach(it => { if (it.id === institutionId) localName = it.name || localName; });
+                });
+                if (localName) {
+                    Object.keys(instData).forEach(cat => {
+                        const list = instData[cat] || [];
+                        (list || []).forEach(it => { if (!item && it && (it.name || '') === localName) { item = it; catKey = cat; } });
+                    });
+                }
+            }
+            if (!item) return resolve(false);
+            // 로컬에 주입
+            const categories = Object.keys(institutionsData || {});
+            let updated = false;
+            for (const c of categories) {
+                const list = institutionsData[c] || [];
+                const target = list.find(i => i.id === institutionId);
+                if (target) {
+                    target.addressKorean = item.addressKorean || '';
+                    target.addressEnglish = item.addressEnglish || '';
+                    updated = true; break;
+                }
+            }
+            if (!updated) {
+                const useCat = catKey || '기타';
+                institutionsData[useCat] = institutionsData[useCat] || [];
+                institutionsData[useCat].push({ id: institutionId, ...item });
+            }
+            try { saveDataToLocalStorage(); } catch (_) {}
+            try { syncDataToServer(); } catch (_) {}
+            resolve(true);
+        }).catch(() => resolve(false));
+    });
 }
 
 // 안전 저장: 부분 업데이트 + 빈 데이터 가드
