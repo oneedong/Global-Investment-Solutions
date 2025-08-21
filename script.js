@@ -24,6 +24,16 @@ let selectedGpLetter = 'A';
 // Firestore 핸들
 let db = null;
 
+// Roadshow Scheduling 데이터
+let roadshowData = {
+    days: [], // [{id, label}]
+    meetings: [], // [{id, fundId, dayId, start, end, company, staff, note, address, lpAttendees, kbSecurities}]
+    investors: [],
+    funds: [] // [{id, name}]
+};
+// 선택 상태
+let openRoadshowMeetingId = null;
+
 // 기관 연락처(팝업 대시보드) 상태
 let institutionsContacts = {}; // key: institutionId, value: Contact[]
 let openContactsInstitutionId = null; // 현재 모달이 가리키는 기관 ID
@@ -1952,6 +1962,7 @@ function saveDataToLocalStorage() {
     localStorage.setItem('gpsData', JSON.stringify(gpsData));
     localStorage.setItem('institutionsContacts', JSON.stringify(institutionsContacts));
     localStorage.setItem('gpContacts', JSON.stringify(gpContacts));
+    localStorage.setItem('roadshowData', JSON.stringify(roadshowData));
     
     // Firebase에 실시간 동기화
     syncDataToServer();
@@ -2000,6 +2011,14 @@ function loadDataFromLocalStorage() {
     if (savedGpContacts) {
         gpContacts = JSON.parse(savedGpContacts);
     }
+    const savedRoadshow = localStorage.getItem('roadshowData');
+    if (savedRoadshow) {
+        try { roadshowData = JSON.parse(savedRoadshow) || {}; } catch (_) { roadshowData = {}; }
+    }
+    if (!roadshowData || typeof roadshowData !== 'object') roadshowData = {};
+    if (!Array.isArray(roadshowData.days)) roadshowData.days = [];
+    if (!Array.isArray(roadshowData.meetings)) roadshowData.meetings = [];
+    if (!Array.isArray(roadshowData.investors)) roadshowData.investors = [];
 
     // 전략 정규화 적용
     normalizeGpStrategies();
@@ -2045,6 +2064,11 @@ function initializeRealTimeSync() {
 			if (data.institutionsContacts && JSON.stringify(data.institutionsContacts) !== JSON.stringify(institutionsContacts)) {
 				institutionsContacts = data.institutionsContacts;
 				if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
+				changed = true;
+			}
+			if (data.roadshowData && JSON.stringify(data.roadshowData) !== JSON.stringify(roadshowData)) {
+				roadshowData = data.roadshowData;
+				renderRoadshow();
 				changed = true;
 			}
 			if (changed) updateConnectionStatus(true);
@@ -2102,6 +2126,7 @@ function syncDataToServer() {
                 gpsData: gpsData,
                 institutionsContacts: institutionsContacts,
                 gpContacts: gpContacts,
+                roadshowData: roadshowData,
                 lastUpdated: new Date().toISOString(),
                 updatedBy: generateUserId()
             };
@@ -2205,6 +2230,11 @@ function syncDataFromServer() {
                     if (data.institutionsContacts && JSON.stringify(data.institutionsContacts) !== JSON.stringify(institutionsContacts)) {
                         institutionsContacts = data.institutionsContacts;
                         if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
+                    }
+                    
+                    if (data.roadshowData && JSON.stringify(data.roadshowData) !== JSON.stringify(roadshowData)) {
+                        roadshowData = data.roadshowData;
+                        renderRoadshow();
                     }
                     
                     console.log('Firebase에서 데이터를 가져왔습니다.');
@@ -3080,3 +3110,327 @@ function closeAllOpenPopups() {
     // GP 선택 다이얼로그(동적)
     document.querySelectorAll('.gp-dialog').forEach(el => { try { el.remove(); } catch (e) {} });
 }
+
+function renderRoadshow() {
+    // 헤더(day columns)와 바디(8:00~24:00, 30분 단위)를 렌더링
+    const head = document.getElementById('roadshow-grid-head');
+    const body = document.getElementById('roadshow-grid-body');
+    const invBody = document.getElementById('roadshow-investor-tbody');
+    const fundList = document.getElementById('roadshow-fund-list');
+    if (!head || !body || !invBody) return;
+
+    const days = roadshowData.days || [];
+
+    // 좌측 펀드 목록
+    if (fundList) {
+        const funds = roadshowData.funds || [];
+        fundList.innerHTML = funds.map(f => `
+            <li data-fund-id="${f.id}">
+                <input type="text" value="${f.name || ''}" placeholder="펀드명" onchange="updateRoadshowFund('${f.id}', this.value)">
+                <button class="table-action-btn delete" title="삭제" onclick="deleteRoadshowFund('${f.id}')"><i class="fas fa-trash"></i></button>
+            </li>
+        `).join('');
+    }
+
+    // 헤더
+    head.innerHTML = `<tr>
+        ${days.map(d => `<th class="day-col" data-day-id="${d.id}">${escapeHtml(d.label || d.id)}</th>`).join('')}
+    </tr>`;
+
+    // 타임 슬롯 생성
+    const times = buildHalfHourTimes();
+    body.innerHTML = times.map(t => {
+        const rowCells = days.map(d => `<td class=\"slot\" data-day-id=\"${d.id}\" data-time=\"${t}\">${renderMeetingAt(d.id, t)}</td>`).join('');
+        return `<tr>${rowCells}</tr>`;
+    }).join('');
+
+    // Investor 표 렌더링
+    const investors = roadshowData.investors || [];
+    invBody.innerHTML = investors.map((inv, idx) => `
+        <tr data-rs-investor-id="${inv.id}">
+            <td class="number-col">${idx + 1}</td>
+            <td><input type="text" value="${inv.investor || ''}" onchange="updateRoadshowInvestor('${inv.id}','investor', this.value)"></td>
+            <td><input type="text" value="${inv.type || ''}" onchange="updateRoadshowInvestor('${inv.id}','type', this.value)"></td>
+            <td><input type="text" value="${inv.address || ''}" onchange="updateRoadshowInvestor('${inv.id}','address', this.value)"></td>
+            <td><input type="text" value="${inv.lpAttendees || ''}" onchange="updateRoadshowInvestor('${inv.id}','lpAttendees', this.value)"></td>
+            <td><input type="text" value="${inv.kbSecurities || ''}" onchange="updateRoadshowInvestor('${inv.id}','kbSecurities', this.value)"></td>
+            <td class="action-col">
+                <div class="table-actions">
+                    <button class="table-action-btn delete" onclick="deleteRoadshowInvestor('${inv.id}')" title="삭제"><i class="fas fa-trash"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+    // 슬롯 클릭 및 드래그 선택 핸들러
+    attachRoadshowSlotEvents();
+
+    // datalist 업데이트
+    updateRoadshowDatalists();
+}
+
+function addRoadshowFund() {
+    const name = prompt('펀드명을 입력하세요:');
+    if (!name || !name.trim()) return;
+    roadshowData.funds = roadshowData.funds || [];
+    roadshowData.funds.push({ id: 'fund_' + Date.now(), name: name.trim() });
+    saveDataToLocalStorage();
+    renderRoadshow();
+}
+function updateRoadshowFund(id, value) {
+    const f = (roadshowData.funds || []).find(x => x.id === id);
+    if (!f) return;
+    f.name = value;
+    saveDataToLocalStorage();
+}
+function deleteRoadshowFund(id) {
+    if (!confirm('이 펀드를 삭제할까요?')) return;
+    roadshowData.funds = (roadshowData.funds || []).filter(f => f.id !== id);
+    // 해당 펀드의 미팅도 함께 정리(선택)
+    roadshowData.meetings = (roadshowData.meetings || []).filter(m => m.fundId !== id);
+    saveDataToLocalStorage();
+    renderRoadshow();
+}
+
+function openRoadshowMeetingModal(opts = {}) {
+    const modal = document.getElementById('roadshow-meeting-modal');
+    const form = document.getElementById('roadshow-meeting-form');
+    const fundSel = document.getElementById('rs-fund-select');
+    const daySel = document.getElementById('rs-day-select');
+    const startSel = document.getElementById('rs-start-select');
+    const endSel = document.getElementById('rs-end-select');
+    const companyInput = document.getElementById('rs-company');
+    const staffInput = document.getElementById('rs-staff');
+    const noteInput = document.getElementById('rs-note');
+    const addrInput = document.getElementById('rs-address');
+    const lpInput = document.getElementById('rs-lp');
+    const kbInput = document.getElementById('rs-kb');
+    if (!modal || !form) return;
+
+    // Fund 옵션
+    const funds = roadshowData.funds || [];
+    fundSel.innerHTML = funds.map(f => `<option value="${f.id}">${escapeHtml(f.name || f.id)}</option>`).join('');
+
+    // Day 옵션
+    const days = roadshowData.days || [];
+    daySel.innerHTML = days.map(d => `<option value="${d.id}">${escapeHtml(d.label || d.id)}</option>`).join('');
+
+    // 시간 옵션 (30분 단위)
+    const times = buildHalfHourTimes();
+    const timeOptions = times.map(t => `<option value="${t}">${t}</option>`).join('');
+    startSel.innerHTML = timeOptions;
+    endSel.innerHTML = timeOptions + `<option value="24:00">24:00</option>`;
+
+    // 값 세팅
+    let m = null;
+    if (opts.id) {
+        m = (roadshowData.meetings || []).find(x => x.id === opts.id);
+    }
+    if (m) {
+        fundSel.value = m.fundId || (funds[0]?.id || '');
+        daySel.value = m.dayId;
+        startSel.value = m.start;
+        endSel.value = m.end || m.start;
+        companyInput.value = m.company || '';
+        staffInput.value = m.staff || '';
+        noteInput.value = m.note || '';
+        addrInput.value = m.address || '';
+        lpInput.value = Array.isArray(m.lpAttendees) ? m.lpAttendees.join(', ') : (m.lpAttendees || '');
+        kbInput.value = Array.isArray(m.kbSecurities) ? m.kbSecurities.join(', ') : (m.kbSecurities || '');
+        openRoadshowMeetingId = m.id;
+    } else {
+        fundSel.value = (funds[0]?.id || '');
+        daySel.value = (opts.dayId && days.some(d => d.id === opts.dayId)) ? opts.dayId : (days[0]?.id || '');
+        startSel.value = opts.start || times[0];
+        endSel.value = opts.end || opts.start || times[0];
+        companyInput.value = '';
+        staffInput.value = '';
+        noteInput.value = '';
+        addrInput.value = '';
+        lpInput.value = '';
+        kbInput.value = '';
+        openRoadshowMeetingId = null;
+    }
+
+    modal.style.display = 'block';
+
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        const payload = {
+            fundId: fundSel.value,
+            dayId: daySel.value,
+            start: startSel.value,
+            end: endSel.value,
+            company: companyInput.value.trim(),
+            staff: staffInput.value.trim(),
+            note: noteInput.value.trim(),
+            address: addrInput.value.trim(),
+            lpAttendees: (lpInput.value || '').split(',').map(s => s.trim()).filter(Boolean),
+            kbSecurities: (kbInput.value || '').split(',').map(s => s.trim()).filter(Boolean)
+        };
+        if (!payload.dayId || !payload.start) { alert('날짜/시작시간을 선택하세요.'); return; }
+        if (openRoadshowMeetingId) {
+            const idx = roadshowData.meetings.findIndex(x => x.id === openRoadshowMeetingId);
+            if (idx >= 0) roadshowData.meetings[idx] = { ...roadshowData.meetings[idx], ...payload };
+        } else {
+            roadshowData.meetings.push({ id: 'meet_' + Date.now(), ...payload });
+        }
+        saveDataToLocalStorage();
+        renderRoadshow();
+        closeRoadshowMeetingModal();
+    };
+
+    // 회사/담당자 자동완성 업데이트
+    updateRoadshowDatalists();
+}
+
+function updateRoadshowDatalists() {
+    // 기관명: LP/GP/기관 테이블 이름 + GP 이름들을 합침
+    const companyDl = document.getElementById('rs-company-datalist');
+    const staffDl = document.getElementById('rs-staff-datalist');
+    if (companyDl) {
+        const institutionNames = Object.values(institutionsData || {}).flat().map(i => i.name).filter(Boolean);
+        const gpNames = Object.values(gpsData || {}).flat().map(g => g.name).filter(Boolean);
+        const names = [...new Set([...(institutionNames||[]), ...(gpNames||[])])].filter(Boolean);
+        companyDl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    }
+    if (staffDl) {
+        const contactsA = Object.values(institutionsContacts || {}).flat().map(c => c.name).filter(Boolean);
+        const contactsB = Object.values(gpContacts || {}).flat().map(c => c.name).filter(Boolean);
+        const names = [...new Set([...(contactsA||[]), ...(contactsB||[])])].filter(Boolean);
+        staffDl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    }
+}
+
+function attachRoadshowSlotEvents() {
+    const grid = document.getElementById('roadshow-grid-body');
+    if (!grid) return;
+    let dragging = false;
+    let dragDay = null;
+    let startTime = null;
+    let endTime = null;
+
+    const clearSelecting = () => grid.querySelectorAll('.slot-selecting').forEach(el => el.classList.remove('slot-selecting'));
+
+    grid.querySelectorAll('.slot').forEach(td => {
+        td.addEventListener('mousedown', (e) => {
+            dragging = true;
+            dragDay = td.getAttribute('data-day-id');
+            startTime = td.getAttribute('data-time');
+            endTime = startTime;
+            clearSelecting();
+            td.classList.add('slot-selecting');
+            e.preventDefault();
+        });
+        td.addEventListener('mouseenter', () => {
+            if (!dragging) return;
+            const day = td.getAttribute('data-day-id');
+            if (day !== dragDay) return;
+            endTime = td.getAttribute('data-time');
+            // 영역 표시
+            clearSelecting();
+            const [a,b] = orderTimes(startTime, endTime);
+            markSelecting(dragDay, a, b);
+        });
+        td.addEventListener('click', (e) => {
+            if (dragging) return; // 드래그 종료 후 click 방지
+            const dayId = td.getAttribute('data-day-id');
+            const start = td.getAttribute('data-time');
+            openRoadshowMeetingModal({ dayId, start });
+        });
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        const [a,b] = orderTimes(startTime, endTime);
+        clearSelecting();
+        openRoadshowMeetingModal({ dayId: dragDay, start: a, end: nextHalfHour(b) });
+    }, { once: true });
+}
+
+function markSelecting(dayId, start, end) {
+    const slots = Array.from(document.querySelectorAll(`.slot[data-day-id="${dayId}"]`));
+    const times = slots.map(td => td.getAttribute('data-time'));
+    const [a,b] = orderTimes(start, end);
+    slots.forEach(td => {
+        const t = td.getAttribute('data-time');
+        if (timeGte(t, a) && timeLte(t, b)) td.classList.add('slot-selecting');
+    });
+}
+
+function orderTimes(t1, t2) { return (timeToMinutes(t1) <= timeToMinutes(t2)) ? [t1,t2] : [t2,t1]; }
+function timeToMinutes(t) { const [h,m] = t.split(':').map(Number); return h*60+m; }
+function timeGte(a,b){ return timeToMinutes(a) >= timeToMinutes(b); }
+function timeLte(a,b){ return timeToMinutes(a) <= timeToMinutes(b); }
+function nextHalfHour(t) { const m=timeToMinutes(t)+30; const h=Math.floor(m/60); const mm=m%60; return `${String(h).padStart(2,'0')}:${mm===0?'00':'30'}`; }
+
+function buildHalfHourTimes() {
+    const res = [];
+    for (let h = 8; h <= 23; h++) {
+        ['00','30'].forEach(m => res.push(`${String(h).padStart(2,'0')}:${m}`));
+    }
+    // 24:00 끝 표시용으로 추가 슬롯 머리표시는 하지 않음
+    return res;
+}
+
+function renderMeetingAt(dayId, start) {
+    const m = (roadshowData.meetings || []).find(x => x.dayId === dayId && x.start === start);
+    if (!m) return '';
+    const title = escapeHtml(m.investor || '미팅');
+    const meta = escapeHtml(`${m.type || ''}`);
+    return `<div class="meeting" onclick="event.stopPropagation(); openRoadshowMeetingModal({ id: '${m.id}' })">
+        <span class="title">${title}</span>
+        <span class="meta">${meta}</span>
+    </div>`;
+}
+
+function addRoadshowDay() {
+    const label = prompt('날짜 라벨(예: 15 May Thu)을 입력하세요:');
+    if (!label || !label.trim()) return;
+    const id = 'day_' + Date.now();
+    roadshowData.days.push({ id, label: label.trim() });
+    saveDataToLocalStorage();
+    renderRoadshow();
+}
+
+function addRoadshowInvestor() {
+    const name = prompt('Investor 이름을 입력하세요:');
+    if (!name || !name.trim()) return;
+    const id = 'inv_' + Date.now();
+    roadshowData.investors.push({ id, investor: name.trim(), type: '', address: '', lpAttendees: '', kbSecurities: '' });
+    saveDataToLocalStorage();
+    renderRoadshow();
+}
+
+function updateRoadshowInvestor(id, field, value) {
+    const inv = (roadshowData.investors || []).find(i => i.id === id);
+    if (!inv) return;
+    inv[field] = value;
+    saveDataToLocalStorage();
+}
+
+function deleteRoadshowInvestor(id) {
+    if (!confirm('이 Investor를 삭제할까요?')) return;
+    roadshowData.investors = (roadshowData.investors || []).filter(i => i.id !== id);
+    saveDataToLocalStorage();
+    renderRoadshow();
+}
+
+function closeRoadshowMeetingModal() {
+    const modal = document.getElementById('roadshow-meeting-modal');
+    if (modal) modal.style.display = 'none';
+    openRoadshowMeetingId = null;
+}
+
+// 초기 렌더 진입점: 대시보드 진입 시 호출됨
+(function attachRoadshowInit() {
+    const isDashboardPage = !!document.querySelector('.dashboard-container');
+    if (!isDashboardPage) return;
+    // 탭 전환 시 roadshow도 렌더 보장
+    const originalSwitchDashboard = switchDashboard;
+    window.switchDashboard = function(d) {
+        originalSwitchDashboard(d);
+        if (d === 'roadshow') setTimeout(renderRoadshow, 0);
+    };
+})();

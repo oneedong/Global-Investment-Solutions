@@ -96,7 +96,7 @@ body {
 
 .dashboard-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr); /* Contacts, RFP/RFI, LP list, GP list */
+  grid-template-columns: repeat(5, 1fr); /* Contacts, RFP/RFI, LP list, GP list, Roadshow */
   gap: 0;
   width: 100%;
 }
@@ -2431,3 +2431,35 @@ select option { text-align: center; }
     background: #ffecec !important;
     outline: 2px solid #ff4d4f;
 }
+
+/* Roadshow Scheduling */
+.roadshow-layout { display: grid; grid-template-columns: 260px 1.5fr 1fr; gap: 12px; height: 100%; min-height: 0; }
+.roadshow-funds { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e9ecef; padding: 8px; overflow: auto; }
+.fund-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.fund-list li { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center; }
+.fund-list input { flex: 1; padding: 8px 10px; border: none; box-shadow: none; background: transparent; border-radius: 0; text-align: center; font-size: 1.05rem; }
+.fund-list input:focus { outline: none; border-bottom: 2px solid #e9ecef; }
+
+/* Excel-like grid table for roadshow */
+.schedule-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.schedule-table thead th { position: sticky; top: 0; background: #f0f3f7; z-index: 2; border-bottom: 2px solid #cfd8e3; text-align: center; padding: 8px; font-weight: 700; }
+.schedule-table tbody td, .schedule-table thead th { border-right: 1px solid #dfe6ef; }
+.schedule-table tbody td { border-bottom: 1px solid #e6edf6; height: 42px; vertical-align: middle; text-align: center; padding: 0; }
+.schedule-table .day-col { min-width: 180px; }
+
+.slot { position: relative; cursor: pointer; transition: background 0.15s ease; }
+.slot:hover { background: #f8f9ff; }
+.slot.slot-selecting { background: #e6f2ff; }
+.slot .meeting { position: absolute; left: 4px; right: 4px; top: 4px; bottom: 4px; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 6px; padding: 4px 6px; text-align: left; overflow: hidden; }
+.slot .meeting .title { font-weight: 700; color: #1976d2; font-size: 0.85rem; display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.slot .meeting .meta { color: #495057; font-size: 0.78rem; display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+
+/* Modal tweaks for roadshow */
+#roadshow-meeting-modal .modal-content { max-width: 560px; width: 92%; }
+#roadshow-meeting-modal .form-group { margin-bottom: 12px; }
+#roadshow-meeting-modal label { font-weight: 600; color: #495057; font-size: 0.92rem; }
+#roadshow-meeting-modal input, #roadshow-meeting-modal select, #roadshow-meeting-modal textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.92rem; }
+
+/* Address modal typography unify */
+#address-modal textarea, #address-modal input { font-family: inherit; font-size: 0.95rem; line-height: 1.45; color: #333; }
+#address-modal textarea { resize: vertical; }

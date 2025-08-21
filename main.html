@@ -78,6 +78,9 @@
               <button class="dashboard-tab" data-dashboard="gps">
                   <i class="fas fa-users"></i> GP list
               </button>
+              <button class="dashboard-tab" data-dashboard="roadshow">
+                  <i class="fas fa-calendar-alt"></i> Roadshow Scheduling
+              </button>
           </div>
 
           <div class="dashboard-content">
@@ -396,6 +399,130 @@
                   </div>
               </div>
           </div>
+
+          <!-- Roadshow Scheduling 대시보드 -->
+          <div class="dashboard-pane" id="roadshow-dashboard">
+              <div class="section-header">
+                  <h2>Roadshow Scheduling</h2>
+                  <div class="header-actions">
+                      <button class="add-row-btn" onclick="addRoadshowFund()">
+                          <i class="fas fa-plus"></i> 펀드 추가
+                      </button>
+                      <button class="add-row-btn" onclick="addRoadshowDay()">
+                          <i class="fas fa-plus"></i> 날짜 추가
+                      </button>
+                      <button class="add-row-btn" onclick="openRoadshowMeetingModal()">
+                          <i class="fas fa-calendar-plus"></i> 미팅 추가
+                      </button>
+                  </div>
+              </div>
+              <div class="roadshow-caption">
+                  <div id="roadshow-month">&nbsp;</div>
+              </div>
+              <div class="roadshow-layout">
+                  <aside class="roadshow-funds">
+                      <div class="section-header" style="margin-bottom:8px;">
+                          <h3>펀드 목록</h3>
+                          <div class="header-actions">
+                              <button class="add-row-btn" onclick="addRoadshowFund()"><i class="fas fa-plus"></i> 추가</button>
+                          </div>
+                      </div>
+                      <ul id="roadshow-fund-list" class="fund-list"></ul>
+                  </aside>
+                  <div class="roadshow-grid">
+                      <table class="schedule-table" id="roadshow-grid-table">
+                          <thead id="roadshow-grid-head"></thead>
+                          <tbody id="roadshow-grid-body"></tbody>
+                      </table>
+                  </div>
+                  <div class="roadshow-right">
+                      <div class="section-header" style="margin-bottom: 8px;">
+                          <h3>Investor 목록</h3>
+                          <div class="header-actions">
+                              <button class="add-row-btn" onclick="addRoadshowInvestor()"><i class="fas fa-plus"></i> Investor 추가</button>
+                          </div>
+                      </div>
+                      <div class="table-container">
+                          <table class="data-table" id="roadshow-investor-table">
+                              <thead>
+                                  <tr>
+                                      <th class="number-col">No.</th>
+                                      <th>Investor</th>
+                                      <th>Type</th>
+                                      <th>Address (Kor/Eng)</th>
+                                      <th>LP Attendees</th>
+                                      <th>KB Securities</th>
+                                      <th class="action-col">작업</th>
+                                  </tr>
+                              </thead>
+                              <tbody id="roadshow-investor-tbody"></tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          <!-- Roadshow Meeting Modal -->
+          <div id="roadshow-meeting-modal" class="modal">
+              <div class="modal-content">
+                  <div class="modal-header">
+                      <h3>미팅 추가/수정</h3>
+                      <span class="close" onclick="closeRoadshowMeetingModal()">&times;</span>
+                  </div>
+                  <div class="modal-body">
+                      <form id="roadshow-meeting-form">
+                          <div class="form-group">
+                              <label>펀드:</label>
+                              <select id="rs-fund-select"></select>
+                          </div>
+                          <div class="form-group">
+                              <label>날짜:</label>
+                              <select id="rs-day-select"></select>
+                          </div>
+                          <div class="form-row" style="display:flex; gap:12px;">
+                              <div class="form-group" style="flex:1;">
+                                  <label>시작:</label>
+                                  <select id="rs-start-select"></select>
+                              </div>
+                              <div class="form-group" style="flex:1;">
+                                  <label>종료:</label>
+                                  <select id="rs-end-select"></select>
+                              </div>
+                          </div>
+                          <div class="form-group">
+                              <label>기관명:</label>
+                              <input type="text" id="rs-company" list="rs-company-datalist" placeholder="기관명(LP/GP)" />
+                              <datalist id="rs-company-datalist"></datalist>
+                          </div>
+                          <div class="form-group">
+                              <label>담당자:</label>
+                              <input type="text" id="rs-staff" list="rs-staff-datalist" placeholder="담당자" />
+                              <datalist id="rs-staff-datalist"></datalist>
+                          </div>
+                          <div class="form-group">
+                              <label>참고사항:</label>
+                              <textarea id="rs-note" rows="3" placeholder="메모"></textarea>
+                          </div>
+                          <div class="form-group">
+                              <label>Address:</label>
+                              <textarea id="rs-address" rows="2"></textarea>
+                          </div>
+                          <div class="form-group">
+                              <label>LP Attendees:</label>
+                              <input type="text" id="rs-lp" placeholder="콤마로 구분" />
+                          </div>
+                          <div class="form-group">
+                              <label>KB Securities:</label>
+                              <input type="text" id="rs-kb" placeholder="콤마로 구분" />
+                          </div>
+                          <div class="form-actions" style="text-align:right;">
+                              <button type="button" class="btn-secondary" onclick="closeRoadshowMeetingModal()">취소</button>
+                              <button type="submit" class="btn-primary">저장</button>
+                          </div>
+                      </form>
+                  </div>
+              </div>
+          </div>
       </div>
 
       <!-- 기관 연락처 모달 -->
@@ -452,7 +579,7 @@
       <div id="address-modal" class="modal">
           <div class="modal-content">
               <div class="modal-header">
-                  <h3>주소 편집</h3>
+                  <h3>주소</h3>
                   <span class="close" onclick="closeAddressModal()">&times;</span>
               </div>
               <div class="modal-body">
