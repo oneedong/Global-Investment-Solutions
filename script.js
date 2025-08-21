@@ -1990,39 +1990,40 @@ function initializeRealTimeSync() {
 	if (database) {
 		database.ref('/').on('value', (snapshot) => {
 			const data = snapshot.val();
-			if (data && data.lastUpdated) {
-				// 자신의 변경은 무시하고, 다른 사용자의 변경은 항상 반영
-				if (data.updatedBy !== getCurrentUserId()) {
-					console.log('다른 사용자의 변경사항을 감지했습니다.');
-					
-					if (data.tableData) {
-						tableData = data.tableData;
-						renderTable();
-					}
-					
-					if (data.rfpData) {
-						rfpData = data.rfpData;
-						renderRfpTable();
-					}
-					
-					if (data.institutionsData) {
-						institutionsData = data.institutionsData;
-						renderInstitutionsDashboard();
-					}
-					
-					if (data.gpsData) {
-						gpsData = data.gpsData;
-						// 동기화 데이터에도 전략 정규화 적용
-						normalizeGpStrategies();
-						renderGpsDashboard();
-					}
-					if (data.gpContacts) {
-						gpContacts = data.gpContacts;
-					}
-					
-					updateConnectionStatus(true);
-				}
+			if (!data) return;
+			let changed = false;
+			if (data.tableData && JSON.stringify(data.tableData) !== JSON.stringify(tableData)) {
+				tableData = data.tableData;
+				renderTable();
+				changed = true;
 			}
+			if (data.rfpData && JSON.stringify(data.rfpData) !== JSON.stringify(rfpData)) {
+				rfpData = data.rfpData;
+				renderRfpTable();
+				changed = true;
+			}
+			if (data.institutionsData && JSON.stringify(data.institutionsData) !== JSON.stringify(institutionsData)) {
+				institutionsData = data.institutionsData;
+				renderInstitutionsDashboard();
+				changed = true;
+			}
+			if (data.gpsData && JSON.stringify(data.gpsData) !== JSON.stringify(gpsData)) {
+				gpsData = data.gpsData;
+				// 동기화 데이터에도 전략 정규화 적용
+				normalizeGpStrategies();
+				renderGpsDashboard();
+				changed = true;
+			}
+			if (data.gpContacts && JSON.stringify(data.gpContacts) !== JSON.stringify(gpContacts)) {
+				gpContacts = data.gpContacts;
+				changed = true;
+			}
+			if (data.institutionsContacts && JSON.stringify(data.institutionsContacts) !== JSON.stringify(institutionsContacts)) {
+				institutionsContacts = data.institutionsContacts;
+				if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
+				changed = true;
+			}
+			if (changed) updateConnectionStatus(true);
 		});
 	}
 	
