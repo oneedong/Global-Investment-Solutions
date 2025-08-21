@@ -2901,6 +2901,10 @@ function openGpContactsDashboard(letter, gpId, gpName = '') {
 }
 
 // 팝업 대시보드: 연락처 렌더링
+// 연락처 모달 페이지네이션 상태
+let contactsPageMap = {};
+const CONTACTS_PAGE_SIZE = 10;
+
 function renderInstitutionContacts(institutionId) {
 	const tbody = document.getElementById('institution-contacts-tbody');
 	if (!tbody) return;
@@ -2908,16 +2912,18 @@ function renderInstitutionContacts(institutionId) {
 	if ((!list || list.length === 0)) {
 		const raw = institutionId.startsWith('gp_') ? institutionId.slice(3) : institutionId;
 		list = institutionsContacts[raw] || gpContacts[institutionId] || gpContacts[raw] || [];
-		// 최종 폴백: 전체 연락처를 모아 표시 (표시 우선)
-		if ((!list || list.length === 0)) {
-			try {
-				const all = Object.values(institutionsContacts || {}).reduce((a, l) => a.concat(l || []), []);
-				if (Array.isArray(all) && all.length > 0) list = all;
-			} catch (_) {}
-		}
 	}
 
-	if (list.length === 0) {
+	// 페이지 계산
+	const total = Array.isArray(list) ? list.length : 0;
+	const totalPages = Math.max(1, Math.ceil(total / CONTACTS_PAGE_SIZE));
+	const current = Math.min(Math.max(1, contactsPageMap[institutionId] || 1), totalPages);
+	contactsPageMap[institutionId] = current;
+	const start = (current - 1) * CONTACTS_PAGE_SIZE;
+	const end = start + CONTACTS_PAGE_SIZE;
+	const pageItems = (list || []).slice(start, end);
+
+	if (total === 0) {
 		tbody.innerHTML = `
 			<tr>
 				<td colspan="8" class="empty-table">
@@ -2927,12 +2933,14 @@ function renderInstitutionContacts(institutionId) {
 				</td>
 			</tr>
 		`;
+		// 페이지네이션 비움
+		renderInstitutionContactsPagination(institutionId, 1, 1);
 		return;
 	}
 
 	// 부서별 넘버링
 	const deptCounters = {};
-	tbody.innerHTML = list.map(contact => {
+	tbody.innerHTML = pageItems.map(contact => {
 		const dept = (contact.department || '').trim();
 		const no = dept ? ((deptCounters[dept] = (deptCounters[dept] || 0) + 1)) : '';
 		return `
@@ -2958,6 +2966,42 @@ function renderInstitutionContacts(institutionId) {
 			</td>
 		</tr>`;
 	}).join('');
+
+	// 페이지네이션 렌더
+	renderInstitutionContactsPagination(institutionId, current, totalPages);
+}
+
+function renderInstitutionContactsPagination(institutionId, current, totalPages) {
+	const table = document.getElementById('institution-contacts-table');
+	if (!table) return;
+	let pager = document.getElementById('institution-contacts-pagination');
+	if (!pager) {
+		pager = document.createElement('div');
+		pager.id = 'institution-contacts-pagination';
+		pager.style.textAlign = 'center';
+		pager.style.marginTop = '8px';
+		const container = table.parentElement; // .table-container
+		container && container.appendChild(pager);
+	}
+	const btn = (label, page, active = false) => `
+		<button class="pagination-btn" style="min-width:28px;margin:0 3px;padding:4px 8px;${active ? 'background:#667eea;color:#fff;border:none;border-radius:4px;' : 'border:1px solid #dbe2ef;border-radius:4px;background:#fff;'}" onclick="setInstitutionContactsPage('${institutionId}', ${page})">${label}</button>
+	`;
+	let html = '';
+	if (totalPages > 1) {
+		const prev = Math.max(1, current - 1);
+		html += btn('‹', prev, false);
+		for (let p = 1; p <= totalPages; p++) {
+			html += btn(String(p), p, p === current);
+		}
+		const next = Math.min(totalPages, current + 1);
+		html += btn('›', next, false);
+	}
+	pager.innerHTML = html;
+}
+
+function setInstitutionContactsPage(institutionId, page) {
+	contactsPageMap[institutionId] = page;
+	renderInstitutionContacts(institutionId);
 }
 
 function copyContactField(institutionId, contactId, field, label) {
@@ -3151,6 +3195,7 @@ function openAddressModal(category, institutionId) {
     if (!modal) return;
     const ko = document.getElementById('address-korean');
     const en = document.getElementById('address-english');
+    // 해당 기관/GP에 한정된 주소만 표시
     ko.value = (item && item.addressKorean) ? item.addressKorean : '';
     en.value = (item && item.addressEnglish) ? item.addressEnglish : '';
 
