@@ -1371,7 +1371,7 @@ function renderInstitutionsDashboard() {
                 <input type="text" value="${inst.abbreviation || ''}" title="${inst.abbreviation || ''}" placeholder="영문 약어" oninput="this.title=this.value" ondblclick="autoFitColumnForCell(this)" onchange="updateInstitutionField('${selectedInstitutionCategory}','${inst.id}','abbreviation', this.value)">
             </td>
             <td>
-                <button class="address-edit-btn" onclick="openAddressModal('${selectedInstitutionCategory}','${inst.id}')">주소 편집</button>
+                <button class="address-edit-btn" onclick="openAddressModal('${selectedInstitutionCategory}','${inst.id}')">주소</button>
             </td>
             <td>
                 <button class="add-institution-btn contact-open-btn" onclick="openInstitutionContactsDashboard('${inst.id}', '${(inst.name || '').replace(/'/g, "&#39;")}')">
@@ -3471,75 +3471,78 @@ async function restoreFromFirestore() {
     }
     if (!db && firebase && firebase.firestore) db = firebase.firestore();
     if (!db) throw new Error('Firestore 초기화 실패');
-    const snapAll = async (col) => {
-        const arr = [];
+
+    const fetchAll = async (col) => {
+        const out = [];
         const qs = await db.collection(col).get();
-        qs.forEach(d => arr.push(d.data()));
-        return arr;
+        qs.forEach(doc => out.push({ __id: doc.id, ...doc.data() }));
+        return out;
     };
+
     const [rfpArr, instArr, gpArr, tableArr, contactArr] = await Promise.all([
-        snapAll('rfp'), snapAll('institutions'), snapAll('gps'), snapAll('tableData'), snapAll('contacts')
+        fetchAll('rfp'), fetchAll('institutions'), fetchAll('gps'), fetchAll('tableData'), fetchAll('contacts')
     ]);
 
-    let fsCounts = { rfp: rfpArr.length, inst: instArr.length, gps: gpArr.length, table: tableArr.length, contacts: contactArr.length };
-
-    // Firestore가 비어있으면 RTDB 스냅샷으로 복구 시도
-    if ((fsCounts.rfp + fsCounts.inst + fsCounts.gps + fsCounts.table + fsCounts.contacts) === 0 && database) {
-        const snap = await database.ref('/').once('value');
-        const data = snap.val() || {};
-        if (data.tableData || data.rfpData || data.institutionsData || data.gpsData) {
-            tableData = data.tableData || tableData;
-            rfpData = data.rfpData || rfpData;
-            institutionsData = data.institutionsData || institutionsData;
-            gpsData = data.gpsData || gpsData;
-            institutionsContacts = data.institutionsContacts || {};
-            gpContacts = data.gpContacts || {};
-            saveDataToLocalStorage();
-            renderTable(); renderRfpTable(); renderInstitutionsDashboard(); renderGpsDashboard(); renderRoadshow();
-            await safeSyncToRtdb();
-            alert('Firestore에 백업이 없어 RTDB 스냅샷으로 복구했습니다.');
-            return;
-        }
-    }
-
-    // 로컬 구조에 재구성 (Firestore)
-    rfpData = rfpArr || [];
+    // institutions: 카테고리별로 묶고, item.id는 Firestore doc.id로 강제
     institutionsData = {};
     (instArr || []).forEach(it => {
         const cat = it.category || '기타';
         if (!institutionsData[cat]) institutionsData[cat] = [];
-        institutionsData[cat].push(it);
+        const item = { ...it, id: it.__id };
+        institutionsData[cat].push(item);
     });
+
+    // gps: 레터별로 묶고, item.id는 Firestore doc.id로 강제
     gpsData = {};
     (gpArr || []).forEach(it => {
         const L = (it.name || 'A').charAt(0).toUpperCase();
+        const item = { ...it, id: it.__id };
         if (!gpsData[L]) gpsData[L] = [];
-        gpsData[L].push(it);
+        gpsData[L].push(item);
     });
-    tableData = { 'pe-pd': [], 'real-estate': [], infra: [] };
-    (tableArr || []).forEach(it => {
-        if (!tableData[it.tab]) tableData[it.tab] = [];
-        tableData[it.tab].push(it);
-    });
-    // 연락처 재구성 (ownerId 기준으로 묶기)
+
+    // 연락처: ownerId 그대로 그룹핑 (기관/GP 동일 로직), 접두사 변형 금지
     institutionsContacts = {};
     gpContacts = {};
     (contactArr || []).forEach(c => {
-        const owner = c.ownerId || '';
-        if (owner.startsWith('gp_')) {
-            const key = owner; // 그대로 키 사용 (gp_ 접두 포함)
-            if (!gpContacts[key]) gpContacts[key] = [];
-            gpContacts[key].push(c);
-        } else {
-            const key = owner || 'unknown';
-            if (!institutionsContacts[key]) institutionsContacts[key] = [];
-            institutionsContacts[key].push(c);
+        const owner = (c.ownerId || '').trim();
+        if (!owner) {
+            unassignedContacts.push(c);
+            return;
         }
+        // 기관 매칭
+        let matchedInstitution = false;
+        Object.values(institutionsData).forEach(list => {
+            (list || []).forEach(inst => {
+                if (inst.id === owner) matchedInstitution = true;
+            });
+        });
+        if (matchedInstitution) {
+            (institutionsContacts[owner] = institutionsContacts[owner] || []).push(c);
+            return;
+        }
+        // GP 매칭
+        let matchedGp = false;
+        Object.values(gpsData).forEach(list => {
+            (list || []).forEach(gp => {
+                if (gp.id === owner) matchedGp = true;
+            });
+        });
+        if (matchedGp) {
+            (gpContacts[owner] = gpContacts[owner] || []).push(c);
+            return;
+        }
+        // 둘 다 아니면 미배정으로
+        unassignedContacts.push(c);
     });
 
-    // 카테고리 유효화
-    const cats = Object.keys(institutionsData || {});
-    if (!cats.includes(selectedInstitutionCategory)) selectedInstitutionCategory = cats[0] || '';
+    // rfp/tableData는 있는 그대로
+    rfpData = rfpArr || [];
+    tableData = { 'pe-pd': [], 'real-estate': [], infra: [] };
+    (tableArr || []).forEach(it => {
+        const tab = it.tab || 'pe-pd';
+        (tableData[tab] = tableData[tab] || []).push(it);
+    });
 
     saveDataToLocalStorage();
     renderTable();
@@ -3547,9 +3550,15 @@ async function restoreFromFirestore() {
     renderInstitutionsDashboard();
     renderGpsDashboard();
     renderRoadshow();
-    await safeSyncToRtdb();
 
-    alert(`복구 완료\n- RFP: ${fsCounts.rfp}\n- 기관: ${fsCounts.inst}\n- GP: ${fsCounts.gps}\n- 연락처: ${fsCounts.contacts}\n- 연락처(owner 기준 재구성)`);
+    const counts = {
+        inst: Object.values(institutionsData||{}).reduce((a,l)=>a+(l||[]).length,0),
+        gps: Object.values(gpsData||{}).reduce((a,l)=>a+(l||[]).length,0),
+        contacts: (contactArr||[]).length,
+        unassigned: (unassignedContacts||[]).length
+    };
+    await safeSyncToRtdb();
+    alert(`복구 완료\n기관:${counts.inst}건, GP:${counts.gps}건, 연락처:${counts.contacts}건 (미배정:${counts.unassigned}건)`);
 }
 
 // 안전 저장: 부분 업데이트 + 빈 데이터 가드
