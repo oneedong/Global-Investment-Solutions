@@ -2125,7 +2125,73 @@ function initializeFirestoreSync() {
                     renderRfpTable();
                 }
             });
-            // 필요 시 institutions/gps/tableData/contacts도 같은 방식으로 onSnapshot 추가 가능
+            // institutions
+            db.collection('institutions').onSnapshot((snap) => {
+                const byCat = {};
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const cat = data.category || '기타';
+                    const item = { ...data, id: doc.id };
+                    (byCat[cat] = byCat[cat] || []).push(item);
+                });
+                if (JSON.stringify(byCat) !== JSON.stringify(institutionsData)) {
+                    institutionsData = byCat;
+                    renderInstitutionsDashboard();
+                }
+            });
+            // gps
+            db.collection('gps').onSnapshot((snap) => {
+                const byLetter = {};
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const L = (data.name || 'A').charAt(0).toUpperCase();
+                    const item = { ...data, id: doc.id };
+                    (byLetter[L] = byLetter[L] || []).push(item);
+                });
+                // 정규화 후 비교
+                const prev = JSON.stringify(gpsData);
+                gpsData = byLetter;
+                normalizeGpStrategies();
+                if (JSON.stringify(gpsData) !== prev) {
+                    renderGpsDashboard();
+                }
+            });
+            // tableData
+            db.collection('tableData').onSnapshot((snap) => {
+                const byTab = { 'pe-pd': [], 'real-estate': [], 'infra': [] };
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const tab = data.tab || 'pe-pd';
+                    byTab[tab].push(data);
+                });
+                if (JSON.stringify(byTab) !== JSON.stringify(tableData)) {
+                    tableData = byTab;
+                    renderTable();
+                }
+            });
+            // contacts
+            db.collection('contacts').onSnapshot((snap) => {
+                const map = {};
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const owner = (data.ownerId || '').trim();
+                    if (!owner) return;
+                    (map[owner] = map[owner] || []).push({ ...data, id: doc.id });
+                });
+                // 공용 맵에 모두 저장 (UI는 institutionsContacts를 참조)
+                institutionsContacts = map;
+                // 보조 맵은 필요 시 재생성
+                const gp = {};
+                Object.entries(map).forEach(([owner, list]) => {
+                    let isInst = false;
+                    Object.values(institutionsData).forEach(lst => {
+                        (lst || []).forEach(item => { if (item.id === owner) isInst = true; });
+                    });
+                    if (!isInst) gp[owner] = list;
+                });
+                gpContacts = gp;
+                if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
+            });
         });
     } catch (e) {
         console.warn('Firestore 리스너 초기화 오류:', e);
@@ -2644,6 +2710,15 @@ function openInstitutionContactsDashboard(institutionId, institutionName = '') {
     if (modal) modal.style.display = 'block';
     // 내용 렌더
     renderInstitutionContacts(institutionId);
+    // 비어있으면 서버에서 자동 복구 시도
+    try {
+        const list = institutionsContacts[institutionId] || [];
+        if (!Array.isArray(list) || list.length === 0) {
+            recoverContactsForOwner(institutionId).then((ok) => {
+                if (ok) renderInstitutionContacts(institutionId);
+            }).catch(() => {});
+        }
+    } catch (_) {}
 }
 
 function closeInstitutionContactsModal() {
@@ -2662,6 +2737,16 @@ function openGpContactsDashboard(letter, gpId, gpName = '') {
     const modal = document.getElementById('institution-contacts-modal');
     if (modal) modal.style.display = 'block';
     renderInstitutionContacts(openContactsInstitutionId);
+    // 비어있으면 서버에서 자동 복구 시도 (GP)
+    try {
+        const ownerId = openContactsInstitutionId;
+        const list = institutionsContacts[ownerId] || [];
+        if (!Array.isArray(list) || list.length === 0) {
+            recoverContactsForOwner(ownerId).then((ok) => {
+                if (ok) renderInstitutionContacts(ownerId);
+            }).catch(() => {});
+        }
+    } catch (_) {}
 }
 
 // 팝업 대시보드: 연락처 렌더링
@@ -2763,6 +2848,7 @@ function addInstitutionContact() {
         mobile: ''
     });
     saveDataToLocalStorage();
+    try { syncDataToServer(); } catch (_) {}
     renderInstitutionContacts(openContactsInstitutionId);
 }
 
@@ -2773,6 +2859,7 @@ function updateInstitutionContact(institutionId, contactId, field, value) {
     if (!item) return;
     item[field] = value;
     saveDataToLocalStorage();
+    try { syncDataToServer(); } catch (_) {}
 }
 
 // 팝업 대시보드: 연락처 삭제
@@ -2780,6 +2867,7 @@ function deleteInstitutionContact(institutionId, contactId) {
     if (!confirm('이 연락처를 삭제할까요?')) return;
     institutionsContacts[institutionId] = (institutionsContacts[institutionId] || []).filter(c => c.id !== contactId);
     saveDataToLocalStorage();
+    try { syncDataToServer(); } catch (_) {}
     renderInstitutionContacts(institutionId);
 }
 
@@ -2899,6 +2987,21 @@ function openAddressModal(category, institutionId) {
     ko.value = (item && item.addressKorean) ? item.addressKorean : '';
     en.value = (item && item.addressEnglish) ? item.addressEnglish : '';
 
+    // 주소가 비어있으면 서버에서 자동 복구 시도
+    try {
+        const empty = (!ko.value && !en.value);
+        if (empty && institutionId) {
+            recoverInstitutionAddress(institutionId).then((ok) => {
+                if (ok) {
+                    const freshList = institutionsData[category] || [];
+                    const fresh = freshList.find(i => i.id === institutionId);
+                    ko.value = (fresh && fresh.addressKorean) ? fresh.addressKorean : '';
+                    en.value = (fresh && fresh.addressEnglish) ? fresh.addressEnglish : '';
+                }
+            }).catch(() => {});
+        }
+    } catch (_) {}
+
     // 폼 하단에 복사 버튼 추가(중복 생성 방지)
     const form = document.getElementById('address-form');
     if (form && !form._copyButtonsAdded) {
@@ -2951,6 +3054,7 @@ function saveAddressFromModal() {
     item.addressKorean = ko;
     item.addressEnglish = en;
     saveDataToLocalStorage();
+    try { syncDataToServer(); } catch (_) {}
     closeAddressModal();
     renderInstitutionsDashboard();
 }
@@ -3559,6 +3663,73 @@ async function restoreFromFirestore() {
     };
     await safeSyncToRtdb();
     alert(`복구 완료\n기관:${counts.inst}건, GP:${counts.gps}건, 연락처:${counts.contacts}건 (미배정:${counts.unassigned}건)`);
+}
+
+// 특정 ownerId(기관 또는 GP)의 연락처를 Firestore에서 읽어 로컬에 주입
+async function recoverContactsForOwner(ownerId) {
+    try {
+        if (!ownerId) return false;
+        if (!db && firebase && firebase.firestore) db = firebase.firestore();
+        if (!db) return false;
+        const qs = await db.collection('contacts').where('ownerId', '==', ownerId).get();
+        const list = [];
+        qs.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        if (list.length === 0) return false;
+        // owner가 institutions/gps 어느 쪽인지 판별
+        let isInst = false;
+        Object.values(institutionsData).forEach(arr => {
+            (arr || []).forEach(item => { if (item.id === ownerId) isInst = true; });
+        });
+        if (isInst) {
+            institutionsContacts[ownerId] = list;
+        } else {
+            gpContacts[ownerId] = list;
+        }
+        saveDataToLocalStorage();
+        try { syncDataToServer(); } catch (_) {}
+        return true;
+    } catch (e) {
+        console.warn('recoverContactsForOwner 실패:', e);
+        return false;
+    }
+}
+
+// 특정 기관의 주소 필드를 Firestore의 institutions 문서에서 복구
+async function recoverInstitutionAddress(institutionId) {
+    try {
+        if (!institutionId) return false;
+        if (!db && firebase && firebase.firestore) db = firebase.firestore();
+        if (!db) return false;
+        const doc = await db.collection('institutions').doc(institutionId).get();
+        if (!doc.exists) return false;
+        const data = doc.data() || {};
+        const cat = data.category || null;
+        // 현재 로컬의 institutionsData에서 해당 id를 찾아 업데이트
+        const categories = Object.keys(institutionsData || {});
+        for (const c of categories) {
+            const list = institutionsData[c] || [];
+            const item = list.find(i => i.id === institutionId);
+            if (item) {
+                item.addressKorean = data.addressKorean || '';
+                item.addressEnglish = data.addressEnglish || '';
+                saveDataToLocalStorage();
+                try { syncDataToServer(); } catch (_) {}
+                return true;
+            }
+        }
+        // 만약 카테고리 이동 등으로 로컬에 없는 경우, 카테고리에 삽입
+        if (cat) {
+            institutionsData[cat] = institutionsData[cat] || [];
+            institutionsData[cat].push({ id: institutionId, ...data });
+            saveDataToLocalStorage();
+            try { syncDataToServer(); } catch (_) {}
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.warn('recoverInstitutionAddress 실패:', e);
+        return false;
+    }
 }
 
 // 안전 저장: 부분 업데이트 + 빈 데이터 가드
