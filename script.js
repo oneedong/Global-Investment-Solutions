@@ -2179,13 +2179,24 @@ function initializeFirestoreSync() {
                     (map[owner] = map[owner] || []).push({ ...data, id: doc.id });
                 });
                 // 공용 맵에 모두 저장 (UI는 institutionsContacts를 참조)
-                institutionsContacts = map;
-                // 보조 맵은 필요 시 재생성
-                const gp = {};
+                // 별칭 키(gp_접두사)도 함께 구성하여 UI 불일치 방지
+                const merged = { ...map };
                 Object.entries(map).forEach(([owner, list]) => {
+                    let isGpId = false;
+                    Object.values(gpsData || {}).forEach(lst => {
+                        (lst || []).forEach(item => { if (item.id === owner) isGpId = true; });
+                    });
+                    if (isGpId && !merged['gp_' + owner]) merged['gp_' + owner] = list;
+                });
+                institutionsContacts = merged;
+                // 보조 맵(gpContacts) 재생성
+                const gp = {};
+                Object.entries(merged).forEach(([owner, list]) => {
+                    // 원래 id가 gp인지 판별 (gp_ 접두사 제거 후 매칭)
+                    const raw = owner.startsWith('gp_') ? owner.slice(3) : owner;
                     let isInst = false;
-                    Object.values(institutionsData).forEach(lst => {
-                        (lst || []).forEach(item => { if (item.id === owner) isInst = true; });
+                    Object.values(institutionsData || {}).forEach(lst => {
+                        (lst || []).forEach(item => { if (item.id === raw) isInst = true; });
                     });
                     if (!isInst) gp[owner] = list;
                 });
@@ -3605,39 +3616,19 @@ async function restoreFromFirestore() {
         gpsData[L].push(item);
     });
 
-    // 연락처: ownerId 그대로 그룹핑 (기관/GP 동일 로직), 접두사 변형 금지
+    // 연락처: ownerId 그룹핑 + GP 별칭 키(gp_...)도 함께 구성해 누락 방지
     institutionsContacts = {};
     gpContacts = {};
     (contactArr || []).forEach(c => {
         const owner = (c.ownerId || '').trim();
-        if (!owner) {
-            unassignedContacts.push(c);
-            return;
-        }
-        // 기관 매칭
-        let matchedInstitution = false;
-        Object.values(institutionsData).forEach(list => {
-            (list || []).forEach(inst => {
-                if (inst.id === owner) matchedInstitution = true;
-            });
-        });
-        if (matchedInstitution) {
-            (institutionsContacts[owner] = institutionsContacts[owner] || []).push(c);
-            return;
-        }
-        // GP 매칭
-        let matchedGp = false;
+        if (!owner) { unassignedContacts.push(c); return; }
+        (institutionsContacts[owner] = institutionsContacts[owner] || []).push(c);
+        // GP id와 매칭되면 별칭 키도 추가
+        let isGp = false;
         Object.values(gpsData).forEach(list => {
-            (list || []).forEach(gp => {
-                if (gp.id === owner) matchedGp = true;
-            });
+            (list || []).forEach(gp => { if (gp.id === owner) isGp = true; });
         });
-        if (matchedGp) {
-            (gpContacts[owner] = gpContacts[owner] || []).push(c);
-            return;
-        }
-        // 둘 다 아니면 미배정으로
-        unassignedContacts.push(c);
+        if (isGp) (institutionsContacts['gp_' + owner] = institutionsContacts['gp_' + owner] || []).push(c);
     });
 
     // rfp/tableData는 있는 그대로
@@ -3671,20 +3662,24 @@ async function recoverContactsForOwner(ownerId) {
         if (!ownerId) return false;
         if (!db && firebase && firebase.firestore) db = firebase.firestore();
         if (!db) return false;
-        const qs = await db.collection('contacts').where('ownerId', '==', ownerId).get();
-        const list = [];
-        qs.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        // ownerId와 gp_ 접두사/무접두사 케이스를 모두 조회
+        const candidates = new Set([ownerId]);
+        if (ownerId.startsWith('gp_')) candidates.add(ownerId.slice(3));
+        else candidates.add('gp_' + ownerId);
+        let list = [];
+        for (const key of candidates) {
+            const qs = await db.collection('contacts').where('ownerId', '==', key).get();
+            qs.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        }
         if (list.length === 0) return false;
         // owner가 institutions/gps 어느 쪽인지 판별
         let isInst = false;
+        const rawOwner = ownerId.startsWith('gp_') ? ownerId.slice(3) : ownerId;
         Object.values(institutionsData).forEach(arr => {
-            (arr || []).forEach(item => { if (item.id === ownerId) isInst = true; });
+            (arr || []).forEach(item => { if (item.id === rawOwner) isInst = true; });
         });
-        if (isInst) {
-            institutionsContacts[ownerId] = list;
-        } else {
-            gpContacts[ownerId] = list;
-        }
+        // 로컬 키는 현재 열린 키(ownerId)에 주입
+        if (isInst) institutionsContacts[ownerId] = list; else gpContacts[ownerId] = list;
         saveDataToLocalStorage();
         try { syncDataToServer(); } catch (_) {}
         return true;
@@ -3700,9 +3695,22 @@ async function recoverInstitutionAddress(institutionId) {
         if (!institutionId) return false;
         if (!db && firebase && firebase.firestore) db = firebase.firestore();
         if (!db) return false;
-        const doc = await db.collection('institutions').doc(institutionId).get();
-        if (!doc.exists) return false;
-        const data = doc.data() || {};
+        // 1) 정확한 문서 ID로 조회
+        let doc = await db.collection('institutions').doc(institutionId).get();
+        let data = doc && doc.exists ? (doc.data() || {}) : null;
+        // 2) 없으면 동일 이름을 가진 문서 후보 검색
+        if (!data) {
+            // 현재 로컬에서 이름을 얻어와서 동일 이름 검색
+            let name = '';
+            Object.values(institutionsData || {}).forEach(list => {
+                (list || []).forEach(it => { if (it.id === institutionId) name = it.name || name; });
+            });
+            if (name) {
+                const qs = await db.collection('institutions').where('name','==',name).get();
+                qs.forEach(d => { if (!data) { data = d.data() || {}; doc = d; } });
+            }
+            if (!data) return false;
+        }
         const cat = data.category || null;
         // 현재 로컬의 institutionsData에서 해당 id를 찾아 업데이트
         const categories = Object.keys(institutionsData || {});
