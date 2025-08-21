@@ -3619,6 +3619,7 @@ async function restoreFromFirestore() {
     // 연락처: ownerId 그룹핑 + GP 별칭 키(gp_...)도 함께 구성해 누락 방지
     institutionsContacts = {};
     gpContacts = {};
+    let unassignedContacts = [];
     (contactArr || []).forEach(c => {
         const owner = (c.ownerId || '').trim();
         if (!owner) { unassignedContacts.push(c); return; }
