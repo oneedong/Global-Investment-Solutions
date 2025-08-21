@@ -142,6 +142,8 @@ document.addEventListener('DOMContentLoaded', function() {
         updateConnectionStatus();
         // Firestore 초기화 및 리스너
         initializeFirestoreSync();
+        // 연락처가 비어 있으면 Firestore에서 전량 부트스트랩 (표시 누락 방지)
+        setTimeout(() => { try { ensureContactsBootstrapped(); } catch (_) {} }, 200);
         
         // 열 리사이즈 기능 초기화
         setTimeout(() => {
@@ -2163,6 +2165,66 @@ function initializeFirestoreSync() {
         // 로그인 이후에만 리스너 붙이기
         firebase.auth().onAuthStateChanged(u => {
             if (!u) return;
+            // 부트스트랩용 헬퍼: Firestore의 contacts/institutions/gps를 즉시 한 번 끌어와 병합
+            window.ensureContactsBootstrapped = async function ensureContactsBootstrapped() {
+                try {
+                    const colToArr = async (name) => {
+                        const out = [];
+                        const qs = await db.collection(name).get();
+                        qs.forEach(doc => out.push({ id: doc.id, ...doc.data() }));
+                        return out;
+                    };
+                    const [contactsArr, instArr, gpArr] = await Promise.all([
+                        colToArr('contacts'), colToArr('institutions'), colToArr('gps')
+                    ]);
+                    // institutions/gps 병합
+                    const byCat = {};
+                    instArr.forEach(it => {
+                        const cat = it.category || '기타';
+                        (byCat[cat] = byCat[cat] || []).push(it);
+                    });
+                    if (Object.keys(byCat).length) {
+                        institutionsData = byCat;
+                        renderInstitutionsDashboard();
+                    }
+                    const byLetter = {};
+                    gpArr.forEach(it => {
+                        const L = (it.name || 'A').charAt(0).toUpperCase();
+                        (byLetter[L] = byLetter[L] || []).push(it);
+                    });
+                    if (Object.keys(byLetter).length) {
+                        gpsData = byLetter;
+                        normalizeGpStrategies();
+                        renderGpsDashboard();
+                    }
+                    // contacts 병합 + 별칭 키 구성
+                    const map = {};
+                    contactsArr.forEach(c => {
+                        const owner = (c.ownerId || '').trim();
+                        if (!owner) return;
+                        (map[owner] = map[owner] || []).push(c);
+                    });
+                    Object.entries(map).forEach(([owner, list]) => {
+                        let isGpId = false;
+                        Object.values(gpsData || {}).forEach(lst => {
+                            (lst || []).forEach(item => { if (item.id === owner) isGpId = true; });
+                        });
+                        if (isGpId && !map['gp_' + owner]) map['gp_' + owner] = list;
+                    });
+                    const before = Object.values(institutionsContacts||{}).reduce((a,l)=>a+(Array.isArray(l)?l.length:0),0);
+                    const incoming = Object.values(map||{}).reduce((a,l)=>a+(Array.isArray(l)?l.length:0),0);
+                    if (incoming > 0) {
+                        institutionsContacts = mergeContactsMaps(institutionsContacts, map);
+                        if (before === 0) {
+                            // 처음 채워지는 경우 즉시 렌더 보장
+                            if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
+                        }
+                        try { safeSyncToRtdb(); } catch (_) {}
+                    }
+                } catch (e) {
+                    console.warn('ensureContactsBootstrapped 오류:', e);
+                }
+            };
             // 예시: rfp 컬렉션 실시간 반영
             db.collection('rfp').onSnapshot((snap) => {
                 const arr = [];
