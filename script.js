@@ -47,21 +47,9 @@ let openGpContactId = null;
 // 현재 페이지 경로 기준으로 안전하게 상대 경로 이동
 function goTo(path) {
   try {
-    const isGitHubPages = /\.github\.io$/.test(window.location.hostname);
-    if (isGitHubPages) {
-      // GitHub Pages: 사용자 페이지(/)와 프로젝트 페이지(/repo/) 구분
-      const parts = window.location.pathname.split('/').filter(Boolean);
-      const first = parts[0] || '';
-      const looksLikeFile = /\./.test(first); // landing.html 같은 파일명
-      const repoBase = (!first || looksLikeFile) ? '/' : `/${first}/`;
-      const url = window.location.origin + repoBase + path;
-      window.location.replace(url);
-      return;
-    }
-    // 일반 호스팅: 현재 파일의 디렉터리 기준 상대 경로
-    const href = window.location.href.replace(/[?#].*$/, '');
-    const baseDir = href.endsWith('/') ? href : href.replace(/[^/]*$/, '');
-    const url = new URL(path, baseDir);
+    // 항상 현재 디렉터리 기준 상대 경로(./path)로 이동해 404 위험 최소화
+    const normalized = path.startsWith('./') ? path : (`./${path}`);
+    const url = new URL(normalized, window.location.href);
     window.location.assign(url.href);
   } catch (_) {
     window.location.href = path;
@@ -2851,6 +2839,8 @@ function syncInstitutionsFromRfp() {
 // 새로운 대시보드를 여는 함수
 function openInstitutionContactsDashboard(institutionId, institutionName = '') {
     openContactsInstitutionId = institutionId;
+    // 페이지 초기화
+    contactsPageMap[institutionId] = 1;
     // 제목 설정
     const titleEl = document.getElementById('institution-contacts-title');
     if (titleEl) {
@@ -2880,6 +2870,7 @@ function closeInstitutionContactsModal() {
 // GP 연락처: LP와 동일한 UI 재사용 (기관 연락처 모달을 공용으로 사용)
 function openGpContactsDashboard(letter, gpId, gpName = '') {
     openContactsInstitutionId = `gp_${gpId}`; // 키 충돌 방지
+    contactsPageMap[openContactsInstitutionId] = 1;
     // 제목 설정
     const titleEl = document.getElementById('institution-contacts-title');
     if (titleEl) {
@@ -2908,10 +2899,13 @@ const CONTACTS_PAGE_SIZE = 10;
 function renderInstitutionContacts(institutionId) {
 	const tbody = document.getElementById('institution-contacts-tbody');
 	if (!tbody) return;
+	// 정확히 동일 키 우선
 	let list = institutionsContacts[institutionId] || [];
 	if ((!list || list.length === 0)) {
+		// gp_ 접두사/무접두사 양쪽 모두 검사
 		const raw = institutionId.startsWith('gp_') ? institutionId.slice(3) : institutionId;
-		list = institutionsContacts[raw] || gpContacts[institutionId] || gpContacts[raw] || [];
+		const alias = institutionId.startsWith('gp_') ? raw : ('gp_' + raw);
+		list = institutionsContacts[raw] || institutionsContacts[alias] || gpContacts[institutionId] || gpContacts[raw] || gpContacts[alias] || [];
 	}
 
 	// 페이지 계산
