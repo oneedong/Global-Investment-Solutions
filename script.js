@@ -121,6 +121,30 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 100);
 
         scheduleAutoFitDashboard();
+
+        // 글로벌 검색 바인딩
+        const globalSearchInput = document.getElementById('global-search-input');
+        const globalSearchBtn = document.getElementById('global-search-btn');
+        if (globalSearchInput) {
+            globalSearchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    performGlobalSearch((globalSearchInput.value || '').trim());
+                }
+            });
+        }
+        if (globalSearchBtn && globalSearchInput) {
+            globalSearchBtn.addEventListener('click', () => {
+                performGlobalSearch((globalSearchInput.value || '').trim());
+            });
+        }
+
+        // ESC로 팝업 모두 닫기
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeAllOpenPopups();
+            }
+        });
     }
 
     // Firebase Auth 로그인 로직
@@ -2593,62 +2617,88 @@ function openGpContactsDashboard(letter, gpId, gpName = '') {
 
 // 팝업 대시보드: 연락처 렌더링
 function renderInstitutionContacts(institutionId) {
-    const tbody = document.getElementById('institution-contacts-tbody');
-    if (!tbody) return;
-    const list = institutionsContacts[institutionId] || [];
+	const tbody = document.getElementById('institution-contacts-tbody');
+	if (!tbody) return;
+	const list = institutionsContacts[institutionId] || [];
 
-    if (list.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8" class="empty-table">
-                    <i class="fas fa-address-book"></i>
-                    <h3>등록된 Contact가 없습니다</h3>
-                    <p>오른쪽 상단의 연락처 추가 버튼을 눌러 등록하세요.</p>
-                </td>
-            </tr>
-        `;
-        return;
-    }
+	if (list.length === 0) {
+		tbody.innerHTML = `
+			<tr>
+				<td colspan="8" class="empty-table">
+					<i class="fas fa-address-book"></i>
+					<h3>등록된 Contact가 없습니다</h3>
+					<p>오른쪽 상단의 연락처 추가 버튼을 눌러 등록하세요.</p>
+				</td>
+			</tr>
+		`;
+		return;
+	}
 
-    // 부서별 넘버링
-    const deptCounters = {};
-    tbody.innerHTML = list.map(contact => {
-        const dept = (contact.department || '').trim();
-        const no = dept ? ((deptCounters[dept] = (deptCounters[dept] || 0) + 1)) : '';
-        return `
-        <tr data-contact-id="${contact.id}">
-            <td class="number-col">${no}</td>
-            <td><input type="text" value="${contact.department || ''}" placeholder="부서명" onchange="updateInstitutionContact('${institutionId}','${contact.id}','department', this.value)"></td>
-            <td><input type="text" value="${contact.position || ''}" placeholder="직급" onchange="updateInstitutionContact('${institutionId}','${contact.id}','position', this.value)"></td>
-            <td><input type="text" value="${contact.name || ''}" placeholder="성함" onchange="updateInstitutionContact('${institutionId}','${contact.id}','name', this.value)"></td>
-            <td><input type="email" value="${contact.email || ''}" placeholder="E-mail" onchange="updateInstitutionContact('${institutionId}','${contact.id}','email', this.value)"></td>
-            <td><input type="text" value="${contact.office || ''}" placeholder="내선번호" onchange="updateInstitutionContact('${institutionId}','${contact.id}','office', this.value)"></td>
-            <td><input type="text" value="${contact.mobile || ''}" placeholder="핸드폰" onchange="updateInstitutionContact('${institutionId}','${contact.id}','mobile', this.value)"></td>
-            <td class="action-col">
-                <div class="table-actions">
-                    <button class="table-action-btn delete" onclick="deleteInstitutionContact('${institutionId}','${contact.id}')" title="삭제">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            </td>
-        </tr>`;
-    }).join('');
+	// 부서별 넘버링
+	const deptCounters = {};
+	tbody.innerHTML = list.map(contact => {
+		const dept = (contact.department || '').trim();
+		const no = dept ? ((deptCounters[dept] = (deptCounters[dept] || 0) + 1)) : '';
+		return `
+		<tr data-contact-id="${contact.id}">
+			<td class="number-col">${no}</td>
+			<td><input type="text" value="${contact.department || ''}" placeholder="부서명" onchange="updateInstitutionContact('${institutionId}','${contact.id}','department', this.value)"></td>
+			<td><input type="text" value="${contact.position || ''}" placeholder="직급" onchange="updateInstitutionContact('${institutionId}','${contact.id}','position', this.value)"></td>
+			<td><input type="text" value="${contact.name || ''}" placeholder="성함" onchange="updateInstitutionContact('${institutionId}','${contact.id}','name', this.value)"></td>
+			<td>
+				<div style="display:flex; align-items:center; gap:6px;">
+					<input type="email" value="${contact.email || ''}" placeholder="E-mail" onchange="updateInstitutionContact('${institutionId}','${contact.id}','email', this.value)">
+					<button class="table-action-btn" title="이메일 복사" onclick="copyContactEmail('${institutionId}','${contact.id}')"><i class="fas fa-copy"></i></button>
+				</div>
+			</td>
+			<td><input type="text" value="${contact.office || ''}" placeholder="내선번호" onchange="updateInstitutionContact('${institutionId}','${contact.id}','office', this.value)"></td>
+			<td><input type="text" value="${contact.mobile || ''}" placeholder="핸드폰" onchange="updateInstitutionContact('${institutionId}','${contact.id}','mobile', this.value)"></td>
+			<td class="action-col">
+				<div class="table-actions">
+					<button class="table-action-btn delete" onclick="deleteInstitutionContact('${institutionId}','${contact.id}')" title="삭제">
+						<i class="fas fa-trash"></i>
+					</button>
+				</div>
+			</td>
+		</tr>`;
+	}).join('');
+}
+
+function copyContactField(institutionId, contactId, field, label) {
+	const list = institutionsContacts[institutionId] || [];
+	const item = list.find(c => c.id === contactId);
+	const value = (item && item[field] ? String(item[field]) : '').trim();
+	if (!value) {
+		alert(`${label || '값'}이(가) 없습니다.`);
+		return;
+	}
+	navigator.clipboard.writeText(value).then(() => {
+		alert(`${label || '값'}이 복사되었습니다.`);
+	}).catch(() => {
+		const ta = document.createElement('textarea');
+		ta.value = value; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+		alert(`${label || '값'}이 복사되었습니다.`);
+	});
+}
+
+function copyContactEmail(institutionId, contactId) {
+	return copyContactField(institutionId, contactId, 'email', '이메일');
 }
 
 function copyDeptEmails(institutionId, dept) {
-    const list = institutionsContacts[institutionId] || [];
-    const emails = list
-        .filter(c => (c.department || '').trim() === dept && (c.email || '').trim())
-        .map(c => c.email.trim());
-    const text = emails.join(', ');
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-        alert(`${dept} 부서 이메일 ${emails.length}개가 복사되었습니다.`);
-    }).catch(() => {
-        const ta = document.createElement('textarea');
-        ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-        alert(`${dept} 부서 이메일 ${emails.length}개가 복사되었습니다.`);
-    });
+	const list = institutionsContacts[institutionId] || [];
+	const emails = list
+		.filter(c => (c.department || '').trim() === dept && (c.email || '').trim())
+		.map(c => c.email.trim());
+	const text = emails.join(', ');
+	if (!text) return;
+	navigator.clipboard.writeText(text).then(() => {
+		alert(`${dept} 부서 이메일 ${emails.length}개가 복사되었습니다.`);
+	}).catch(() => {
+		const ta = document.createElement('textarea');
+		ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+		alert(`${dept} 부서 이메일 ${emails.length}개가 복사되었습니다.`);
+	});
 }
 
 // 팝업 대시보드: 연락처 추가
@@ -2931,3 +2981,102 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // 위에서 Firebase Auth 기반 로그인 로직을 이미 등록했으므로 중복 방지
 });
+
+// 전역 검색 수행
+let __globalSearchState = { query: '', results: [], index: -1 };
+
+function performGlobalSearch(query) {
+    const q = (query || '').trim();
+    if (!q) return;
+
+    // 동일 쿼리로 다음 결과로 이동
+    if (__globalSearchState.query.toLowerCase() === q.toLowerCase() && Array.isArray(__globalSearchState.results) && __globalSearchState.results.length > 0) {
+        __globalSearchState.index = (__globalSearchState.index + 1) % __globalSearchState.results.length;
+        navigateToSearchResult(__globalSearchState.results[__globalSearchState.index]);
+        return;
+    }
+
+    // 새 검색: 결과 수집
+    const results = [];
+    const lower = q.toLowerCase();
+
+    // Contacts
+    const contactCategories = ['pe-pd','real-estate','infra'];
+    for (const cat of contactCategories) {
+        (tableData[cat] || []).forEach(row => {
+            const fields = [row.institution, row.customer, row.title, row.email].filter(Boolean).map(String);
+            if (fields.some(v => v.toLowerCase().includes(lower))) {
+                results.push({ type: 'contact', cat, id: row.id, selector: `tr[data-row-id="${row.id}"]`, navigate: () => { switchDashboard('contacts'); switchTab(cat); } });
+            }
+        });
+    }
+
+    // RFP
+    (rfpData || []).forEach(rfp => {
+        const fields = [rfp.institutionCategory, rfp.institution, rfp.type, rfp.strategy,
+            ...(Array.isArray(rfp.participatingGps) ? rfp.participatingGps : []),
+            ...(Array.isArray(rfp.selectedGps) ? rfp.selectedGps : []),
+            ...(Array.isArray(rfp.memos) ? rfp.memos : [])
+        ].filter(Boolean).map(String);
+        if (fields.some(v => v.toLowerCase().includes(lower))) {
+            results.push({ type: 'rfp', id: rfp.id, selector: `tr[data-rfp-id="${rfp.id}"]`, navigate: () => { switchDashboard('rfp'); } });
+        }
+    });
+
+    // LP (institutions)
+    Object.keys(institutionsData || {}).forEach(cat => {
+        (institutionsData[cat] || []).forEach(inst => {
+            const fields = [inst.name, inst.englishFullName, inst.abbreviation].filter(Boolean).map(String);
+            if (fields.some(v => v.toLowerCase().includes(lower))) {
+                results.push({ type: 'institution', cat, id: inst.id, selector: `tr[data-inst-id="${inst.id}"]`, navigate: () => { switchDashboard('institutions'); selectedInstitutionCategory = cat; renderInstitutionsDashboard(); } });
+            }
+        });
+    });
+
+    // GP
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    alphabet.forEach(L => {
+        (gpsData[L] || []).forEach(gp => {
+            const fields = [gp.name, gp.englishFullName, ...(Array.isArray(gp.strategy)? gp.strategy : [])].filter(Boolean).map(String);
+            if (fields.some(v => v.toLowerCase().includes(lower))) {
+                results.push({ type: 'gp', letter: L, id: gp.id, selector: `tr[data-gp-id="${gp.id}"]`, navigate: () => { switchDashboard('gps'); setSelectedGpLetter(L); } });
+            }
+        });
+    });
+
+    if (results.length === 0) {
+        alert('검색 결과가 없습니다.');
+        return;
+    }
+
+    __globalSearchState = { query: q, results, index: 0 };
+    navigateToSearchResult(results[0]);
+}
+
+function navigateToSearchResult(item) {
+    if (!item) return;
+    if (typeof item.navigate === 'function') item.navigate();
+    setTimeout(() => highlightRowBySelector(item.selector), 100);
+}
+
+function highlightRowBySelector(selector) {
+    const el = document.querySelector(selector);
+    if (!el) return false;
+    el.classList.add('search-highlight');
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+    setTimeout(() => el.classList.remove('search-highlight'), 2500);
+    return true;
+}
+
+function closeAllOpenPopups() {
+    // 기관/GP 연락처 모달
+    try { closeInstitutionContactsModal(); } catch (e) {}
+    // 부서 선택 모달
+    try { closeDeptEmailModal(); } catch (e) {}
+    // 주소 모달
+    try { closeAddressModal(); } catch (e) {}
+    // 메모 모달
+    try { closeMemoModal(); } catch (e) {}
+    // GP 선택 다이얼로그(동적)
+    document.querySelectorAll('.gp-dialog').forEach(el => { try { el.remove(); } catch (e) {} });
+}

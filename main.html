@@ -23,6 +23,16 @@
               </div>
           </div>
           <div class="header-right">
+              <!-- 검색 + Zoom 예약 -->
+              <div class="global-search">
+                  <input id="global-search-input" type="text" placeholder="검색..." />
+                  <button class="add-row-btn" id="global-search-btn" title="검색">
+                      <i class="fas fa-search"></i>
+                  </button>
+              </div>
+              <a class="add-row-btn" href="https://us06web.zoom.us/meeting/schedule?ampDeviceId=beb7580d-62db-48a3-b8e3-19cad061687f&ampSessionId=1755737517783&ampDeviceId=beb7580d-62db-48a3-b8e3-19cad061687f&ampSessionId=1755737517783" target="_blank" title="ID: eungyo.hong@kbfg.com, PW: Password1!">
+                  <i class="fas fa-video"></i> Zoom 예약
+              </a>
               <!-- 주차 등록 -->
               <a class="add-row-btn" href="https://a21453.pweb.kr/login" target="_blank" title="ID: KL0, PW: 202208">
                   <i class="fas fa-parking"></i> 주차 등록
@@ -340,7 +350,7 @@
           <!-- GP 관리 대시보드 -->
           <div class="dashboard-pane" id="gps-dashboard">
               <div class="section-header">
-                  <h2>GP 관리</h2>
+                  <h2>GP 관리 <span class="note-small">(preqin 기준)</span></h2>
                   <div class="header-actions">
                       <button class="add-row-btn" onclick="openAddGpDialog()">
                           <i class="fas fa-plus"></i> GP 추가
@@ -398,7 +408,7 @@
               <div class="modal-body">
                   <div class="header-actions" style="justify-content: space-between; margin-bottom: 8px; align-items: center;">
                       <button class="add-row-btn" id="dept-copy-open-btn" onclick="openDeptCopyModal()">
-                          <i class="fas fa-copy"></i> 부서별로
+                          <i class="fas fa-copy"></i> 부서별 이메일 복사
                       </button>
                       <button class="add-row-btn" onclick="addInstitutionContact()">
                           <i class="fas fa-user-plus"></i> 연락처 추가

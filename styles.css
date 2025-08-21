@@ -900,6 +900,13 @@ body {
     font-size: 1.8rem;
 }
 
+.note-small {
+    font-size: 0.9rem;
+    color: #6c757d;
+    font-weight: 500;
+    margin-left: 6px;
+}
+
 .header-actions {
     display: flex;
     gap: 12px;
@@ -2408,3 +2415,19 @@ select option { text-align: center; }
 #gps-detail-table th:nth-child(3), #gps-detail-table td:nth-child(3) { width: auto; }
 #gps-detail-table th:nth-child(4), #gps-detail-table td:nth-child(4) { width: auto; }
 #gps-detail-table input, #gps-detail-table button { width: 100% !important; box-sizing: border-box; } 
+
+/* 헤더 글로벌 검색 */
+.global-search { display: inline-flex; align-items: center; gap: 8px; }
+.global-search input {
+    padding: 8px 10px;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    min-width: 220px;
+    font-size: 0.9rem;
+}
+
+/* 전역 검색 하이라이트 */
+.search-highlight {
+    background: #ffecec !important;
+    outline: 2px solid #ff4d4f;
+}
