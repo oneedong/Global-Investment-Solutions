@@ -3924,21 +3924,24 @@ async function recoverContactsForOwner(ownerId) {
             Object.values(gpsData || {}).forEach(arr => (arr||[]).forEach(item => { if ((item.name || '') === ownerName) candidates.add(item.id); }));
         }
         // 3) 후보 각각 조회 후 병합
-        let list = [];
-        for (const key of candidates) {
-            const qs = await db.collection('contacts').where('ownerId', '==', key).get();
-            qs.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-        }
-        if (list.length === 0) return false;
-        // 4) 로컬 키는 현재 열린 키(ownerId)에 주입
-        let isInst = false;
-        Object.values(institutionsData || {}).forEach(arr => {
-            (arr || []).forEach(item => { if (item.id === rawOwner) isInst = true; });
-        });
-        if (isInst) institutionsContacts[ownerId] = list; else gpContacts[ownerId] = list;
-        saveDataToLocalStorage();
-        try { syncDataToServer(); } catch (_) {}
-        return true;
+            let list = [];
+    for (const key of candidates) {
+        const qs = await db.collection('contacts').where('ownerId', '==', key).get();
+        qs.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+    }
+    if (list.length === 0) return false;
+    // 4) 로컬 키는 현재 열린 키(ownerId)와 raw/별칭 키 모두에 주입
+    let isInst = false;
+    Object.values(institutionsData || {}).forEach(arr => {
+        (arr || []).forEach(item => { if (item.id === rawOwner) isInst = true; });
+    });
+    institutionsContacts[ownerId] = list;
+    institutionsContacts[rawOwner] = list;
+    institutionsContacts['gp_' + rawOwner] = list;
+    if (!isInst) gpContacts[ownerId] = list;
+    saveDataToLocalStorage();
+    try { syncDataToServer(); } catch (_) {}
+    return true;
     } catch (e) {
         console.warn('recoverContactsForOwner 실패:', e);
         // Firestore 실패 시 RTDB 폴백 시도
