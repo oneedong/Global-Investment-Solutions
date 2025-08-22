@@ -2406,14 +2406,17 @@ function syncDataToServer() {
                     upsert('tableData', id, { ...row, tab, id });
                 });
             });
-            // 연락처(기관/GP 통합 저장) - ownerId 정규화(gp_ 접두사 제거)
+            // 연락처(기관/GP 통합 저장) - ownerId 정규화 + 존재하는 문서 ID로 매핑
+            // 현재 institutions/gps의 실제 문서 ID 집합
+            const validOwnerIds = new Set();
+            Object.values(institutionsData || {}).forEach(list => (list||[]).forEach(it => validOwnerIds.add(String(it.id))));
+            Object.values(gpsData || {}).forEach(list => (list||[]).forEach(it => validOwnerIds.add(String(it.id))));
             Object.entries(institutionsContacts || {}).forEach(([ownerId, list]) => {
-                const normalizedOwner = typeof ownerId === 'string' && ownerId.startsWith('gp_')
-                    ? ownerId.slice(3)
-                    : ownerId;
+                let normalizedOwner = typeof ownerId === 'string' && ownerId.startsWith('gp_') ? ownerId.slice(3) : ownerId;
+                // 존재하지 않는 경우는 그대로 두되, 저장은 진행 (복구 루틴에서 재매핑)
                 (list || []).forEach(c => {
                     const id = c.id || generateId();
-                    const payload = { ...c, id, ownerId: normalizedOwner };
+                    const payload = { ...c, id, ownerId: String(normalizedOwner) };
                     upsert('contacts', id, payload);
                 });
             });
@@ -3830,17 +3833,48 @@ async function restoreFromFirestore() {
     institutionsContacts = {};
     gpContacts = {};
     let unassignedContacts = [];
+
+    // 과거 내부 id -> 새 문서 id 매핑 구성 (institutions/gps 모두)
+    const ownerIdMap = new Map();
+    (instArr || []).forEach(it => {
+        const oldId = (it && it.id ? String(it.id) : '');
+        const newId = (it && it.__id ? String(it.__id) : '');
+        if (oldId && newId && oldId !== newId) ownerIdMap.set(oldId, newId);
+    });
+    (gpArr || []).forEach(it => {
+        const oldId = (it && it.id ? String(it.id) : '');
+        const newId = (it && it.__id ? String(it.__id) : '');
+        if (oldId && newId && oldId !== newId) ownerIdMap.set(oldId, newId);
+    });
+
     (contactArr || []).forEach(c => {
-        const owner = (c.ownerId || '').trim();
-        if (!owner) { unassignedContacts.push(c); return; }
-            (institutionsContacts[owner] = institutionsContacts[owner] || []).push(c);
-        // GP id와 매칭되면 별칭 키도 추가
+        const raw = (c.ownerId || '').trim();
+        if (!raw) { unassignedContacts.push(c); return; }
+        const stripped = raw.startsWith('gp_') ? raw.slice(3) : raw;
+        const mapped = ownerIdMap.get(stripped) || stripped;
+        (institutionsContacts[mapped] = institutionsContacts[mapped] || []).push({ ...c, ownerId: mapped });
+        // GP id와 매핑되면 별칭 키도 추가
         let isGp = false;
         Object.values(gpsData).forEach(list => {
-            (list || []).forEach(gp => { if (gp.id === owner) isGp = true; });
+            (list || []).forEach(gp => { if (gp.id === mapped) isGp = true; });
         });
-        if (isGp) (institutionsContacts['gp_' + owner] = institutionsContacts['gp_' + owner] || []).push(c);
+        if (isGp) (institutionsContacts['gp_' + mapped] = institutionsContacts['gp_' + mapped] || []).push({ ...c, ownerId: mapped });
     });
+
+    // RTDB에 기존 백업이 있으면 병합(더 많은 데이터를 우선)
+    try {
+        const snap = await database.ref('/').once('value');
+        const rtdb = snap.val() || {};
+        const rInst = rtdb.institutionsContacts || {};
+        const rGp = rtdb.gpContacts || {};
+        const count = (m) => Object.values(m||{}).reduce((a,l)=>a+(Array.isArray(l)?l.length:0),0);
+        if (count(rInst) > count(institutionsContacts)) {
+            institutionsContacts = mergeContactsMaps(institutionsContacts, rInst);
+        }
+        if (count(rGp) > count(gpContacts)) {
+            gpContacts = mergeContactsMaps(gpContacts, rGp);
+        }
+    } catch (_) {}
 
     // rfp/tableData는 있는 그대로
     rfpData = rfpArr || [];
@@ -3876,23 +3910,31 @@ async function recoverContactsForOwner(ownerId) {
         if (!ownerId) return false;
         if (!db && firebase && firebase.firestore) db = firebase.firestore();
         if (!db) return false;
-        // ownerId와 gp_ 접두사/무접두사 케이스를 모두 조회
+        // 1) 기본 후보: ownerId, gp_ 변형
         const candidates = new Set([ownerId]);
         if (ownerId.startsWith('gp_')) candidates.add(ownerId.slice(3));
         else candidates.add('gp_' + ownerId);
+        // 2) 동일 이름 기반 후보 확장 (기관/GP에 동일 이름 문서가 여러 개인 경우)
+        const rawOwner = ownerId.startsWith('gp_') ? ownerId.slice(3) : ownerId;
+        let ownerName = '';
+        Object.values(institutionsData || {}).forEach(arr => (arr||[]).forEach(item => { if (item.id === rawOwner) ownerName = ownerName || (item.name || ''); }));
+        Object.values(gpsData || {}).forEach(arr => (arr||[]).forEach(item => { if (item.id === rawOwner) ownerName = ownerName || (item.name || ''); }));
+        if (ownerName) {
+            Object.values(institutionsData || {}).forEach(arr => (arr||[]).forEach(item => { if ((item.name || '') === ownerName) candidates.add(item.id); }));
+            Object.values(gpsData || {}).forEach(arr => (arr||[]).forEach(item => { if ((item.name || '') === ownerName) candidates.add(item.id); }));
+        }
+        // 3) 후보 각각 조회 후 병합
         let list = [];
         for (const key of candidates) {
             const qs = await db.collection('contacts').where('ownerId', '==', key).get();
             qs.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
         }
         if (list.length === 0) return false;
-        // owner가 institutions/gps 어느 쪽인지 판별
+        // 4) 로컬 키는 현재 열린 키(ownerId)에 주입
         let isInst = false;
-        const rawOwner = ownerId.startsWith('gp_') ? ownerId.slice(3) : ownerId;
-        Object.values(institutionsData).forEach(arr => {
+        Object.values(institutionsData || {}).forEach(arr => {
             (arr || []).forEach(item => { if (item.id === rawOwner) isInst = true; });
         });
-        // 로컬 키는 현재 열린 키(ownerId)에 주입
         if (isInst) institutionsContacts[ownerId] = list; else gpContacts[ownerId] = list;
         saveDataToLocalStorage();
         try { syncDataToServer(); } catch (_) {}
