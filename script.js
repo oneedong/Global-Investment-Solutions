@@ -99,8 +99,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (restoreBtn) {
                     // 권한자만 보이도록 처리
                     const email = (user && user.email ? user.email : '').toLowerCase();
-                    const canRestore = email === 'dongmin.won@kbfg.com' || email.endsWith('@kbfg.com');
+                    const canRestore = email === 'dongmin.won@kbfg.com';
                     restoreBtn.style.display = canRestore ? '' : 'none';
+                    restoreBtn.disabled = !canRestore;
                     restoreBtn.onclick = async () => {
                         if (!canRestore) { alert('복구 권한이 없습니다.'); return; }
                         try {
@@ -113,6 +114,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     };
                 }
             });
+        }
+        // onAuthStateChanged 도달 전이라도 클릭 무시되거나 NPE 방지용 1회 바인딩
+        const restoreBtnEarly = document.getElementById('restoreBtn');
+        if (restoreBtnEarly && !restoreBtnEarly._bound) {
+            restoreBtnEarly._bound = true;
+            restoreBtnEarly.onclick = () => {
+                alert('로그인 후 복구를 사용할 수 있습니다.');
+            };
         }
         initializeTabs();
         initializeDashboardTabs();
