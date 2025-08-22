@@ -98,7 +98,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const restoreBtn = document.getElementById('restoreBtn');
                 if (restoreBtn) {
                     // 권한자만 보이도록 처리
-                    const canRestore = !!(user && user.email && user.email.toLowerCase() === 'dongmin.won@kbfg.com');
+                    const email = (user && user.email ? user.email : '').toLowerCase();
+                    const canRestore = email === 'dongmin.won@kbfg.com' || email.endsWith('@kbfg.com');
                     restoreBtn.style.display = canRestore ? '' : 'none';
                     restoreBtn.onclick = async () => {
                         if (!canRestore) { alert('복구 권한이 없습니다.'); return; }
@@ -3780,7 +3781,8 @@ function closeRoadshowMeetingModal() {
 // Firestore → 로컬 → RTDB 복구
 async function restoreFromFirestore() {
     const current = firebase && firebase.auth && firebase.auth().currentUser;
-    if (!(current && current.email && current.email.toLowerCase() === 'dongmin.won@kbfg.com')) {
+    const email = (current && current.email ? current.email : '').toLowerCase();
+    if (!(email === 'dongmin.won@kbfg.com' || email.endsWith('@kbfg.com'))) {
         throw new Error('복구 권한이 없습니다.');
     }
     if (!db && firebase && firebase.firestore) db = firebase.firestore();
