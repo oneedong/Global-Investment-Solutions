@@ -3116,6 +3116,10 @@ function updateInstitutionContact(institutionId, contactId, field, value) {
 // 팝업 대시보드: 연락처 삭제
 function deleteInstitutionContact(institutionId, contactId) {
     if (!confirm('이 연락처를 삭제할까요?')) return;
+    // 삭제 대상의 필드 스냅샷 확보(동일 이메일/이름으로 저장된 중복 문서까지 제거하기 위함)
+    const currentList = institutionsContacts[institutionId] || [];
+    const snapshotItem = currentList.find(c => c.id === contactId) || {};
+
     // 두 저장소 모두에서 삭제 시도
     institutionsContacts[institutionId] = (institutionsContacts[institutionId] || []).filter(c => c.id !== contactId);
     const raw = institutionId.startsWith('gp_') ? institutionId.slice(3) : institutionId;
@@ -3124,13 +3128,28 @@ function deleteInstitutionContact(institutionId, contactId) {
     gpContacts[raw] = (gpContacts[raw] || []).filter(c => c.id !== contactId);
     saveDataToLocalStorage();
     try { syncDataToServer(); } catch (_) {}
-    // Firestore에도 실제 문서를 삭제하여 onSnapshot 재주입을 방지
-    try {
-        if (!db && firebase && firebase.firestore) db = firebase.firestore();
-        if (db && contactId) {
-            db.collection('contacts').doc(String(contactId)).delete().catch(() => {});
-        }
-    } catch (_) {}
+
+    // Firestore: owner의 모든 별칭 키에서 동일 문서/동일 이메일(+이름) 문서를 일괄 삭제
+    (async () => {
+        try {
+            if (!db && firebase && firebase.firestore) db = firebase.firestore();
+            if (!db) return;
+            const owners = new Set([raw, 'gp_' + raw, institutionId]);
+            for (const owner of owners) {
+                const qs = await db.collection('contacts').where('ownerId','==',owner).get();
+                qs.forEach(doc => {
+                    const data = doc.data() || {};
+                    const sameId = String(doc.id) === String(contactId);
+                    const sameEmail = (data.email || '') && (snapshotItem.email || '') && String(data.email).trim() === String(snapshotItem.email).trim();
+                    const sameName = (data.name || '') && (snapshotItem.name || '') && String(data.name).trim() === String(snapshotItem.name).trim();
+                    if (sameId || (sameEmail && (!snapshotItem.name || sameName))) {
+                        try { db.collection('contacts').doc(String(doc.id)).delete(); } catch (_) {}
+                    }
+                });
+            }
+        } catch (_) {}
+    })();
+
     renderInstitutionContacts(institutionId);
 }
 
