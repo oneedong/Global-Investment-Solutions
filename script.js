@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (restoreBtn) {
                     // 권한자만 보이도록 처리
                     const email = (user && user.email ? user.email : '').toLowerCase();
-                    const canRestore = email === 'dongmin.won@kbfg.com';
+                    const canRestore = (email === 'dongmin.won@kbfg.com');
                     restoreBtn.style.display = canRestore ? '' : 'none';
                     restoreBtn.disabled = !canRestore;
                     restoreBtn.onclick = async () => {
@@ -199,6 +199,10 @@ document.addEventListener('DOMContentLoaded', function() {
       firebase.auth().onAuthStateChanged((user) => {
         if (user && window.location.pathname.endsWith('landing.html')) {
           goTo('main.html');
+        }
+        // 로그인이 성립하면 백그라운드 자동 정규화 1회 실행
+        if (user) {
+          try { autoNormalizeContactsDaily(); } catch (_) {}
         }
       });
     }
@@ -2889,11 +2893,11 @@ function openInstitutionContactsDashboard(institutionId, institutionName = '') {
     const modal = document.getElementById('institution-contacts-modal');
     if (modal) modal.style.display = 'block';
     // 내용 렌더
-    renderInstitutionContacts(institutionId);
+    renderInstitutionContacts(institutionId, institutionName);
     // 항상 서버에서 자동 복구 시도(성공 시 즉시 재렌더)
     try {
-        recoverContactsForOwner(institutionId).then((ok) => {
-            if (ok) renderInstitutionContacts(institutionId);
+        recoverContactsForOwner(institutionId, institutionName).then((ok) => {
+            if (ok) renderInstitutionContacts(institutionId, institutionName);
         }).catch(() => {});
     } catch (_) {}
 }
@@ -2914,12 +2918,12 @@ function openGpContactsDashboard(letter, gpId, gpName = '') {
     }
     const modal = document.getElementById('institution-contacts-modal');
     if (modal) modal.style.display = 'block';
-    renderInstitutionContacts(openContactsInstitutionId);
+    renderInstitutionContacts(openContactsInstitutionId, gpName);
     // 항상 서버에서 자동 복구 시도 (GP)
     try {
         const ownerId = openContactsInstitutionId;
-        recoverContactsForOwner(ownerId).then((ok) => {
-            if (ok) renderInstitutionContacts(ownerId);
+        recoverContactsForOwner(ownerId, gpName).then((ok) => {
+            if (ok) renderInstitutionContacts(ownerId, gpName);
         }).catch(() => {});
     } catch (_) {}
 }
@@ -2929,7 +2933,7 @@ function openGpContactsDashboard(letter, gpId, gpName = '') {
 let contactsPageMap = {};
 const CONTACTS_PAGE_SIZE = 10;
 
-function renderInstitutionContacts(institutionId) {
+function renderInstitutionContacts(institutionId, displayName = '') {
 	const tbody = document.getElementById('institution-contacts-tbody');
 	if (!tbody) return;
 	// 정확히 동일 키 우선
@@ -2938,7 +2942,24 @@ function renderInstitutionContacts(institutionId) {
 		// gp_ 접두사/무접두사 양쪽 모두 검사
 		const raw = institutionId.startsWith('gp_') ? institutionId.slice(3) : institutionId;
 		const alias = institutionId.startsWith('gp_') ? raw : ('gp_' + raw);
-		list = institutionsContacts[raw] || institutionsContacts[alias] || gpContacts[institutionId] || gpContacts[raw] || gpContacts[alias] || [];
+		// 동일 이름의 다른 id 후보들도 함께 모아 합집합
+		let sameNameIds = [];
+		let localName = displayName || '';
+		if (!localName) {
+			Object.values(institutionsData || {}).forEach(arr => (arr||[]).forEach(item => { if (item.id === raw) localName = localName || (item.name || ''); }));
+			Object.values(gpsData || {}).forEach(arr => (arr||[]).forEach(item => { if (item.id === raw) localName = localName || (item.name || ''); }));
+		}
+		if (localName) {
+			Object.values(institutionsData || {}).forEach(arr => (arr||[]).forEach(item => { if ((item.name || '') === localName) sameNameIds.push(item.id); }));
+			Object.values(gpsData || {}).forEach(arr => (arr||[]).forEach(item => { if ((item.name || '') === localName) sameNameIds.push(item.id); }));
+		}
+		const candidateKeys = new Set([institutionId, raw, alias, ...sameNameIds.map(id => id), ...sameNameIds.map(id => 'gp_' + id)]);
+		let merged = [];
+		candidateKeys.forEach(k => {
+			if (Array.isArray(institutionsContacts[k])) merged = merged.concat(institutionsContacts[k]);
+			if (Array.isArray(gpContacts[k])) merged = merged.concat(gpContacts[k]);
+		});
+		list = merged;
 	}
 
 	// 페이지 계산
@@ -3810,7 +3831,7 @@ function closeRoadshowMeetingModal() {
 async function restoreFromFirestore() {
     const current = firebase && firebase.auth && firebase.auth().currentUser;
     const email = (current && current.email ? current.email : '').toLowerCase();
-    if (!(email === 'dongmin.won@kbfg.com' || email.endsWith('@kbfg.com'))) {
+    if (!(email === 'dongmin.won@kbfg.com')) {
         throw new Error('복구 권한이 없습니다.');
     }
     if (!db && firebase && firebase.firestore) db = firebase.firestore();
@@ -3921,7 +3942,7 @@ async function restoreFromFirestore() {
 }
 
 // 특정 ownerId(기관 또는 GP)의 연락처를 Firestore에서 읽어 로컬에 주입
-async function recoverContactsForOwner(ownerId) {
+async function recoverContactsForOwner(ownerId, displayName = '') {
     try {
         if (!ownerId) return false;
         if (!db && firebase && firebase.firestore) db = firebase.firestore();
@@ -3930,34 +3951,47 @@ async function recoverContactsForOwner(ownerId) {
         const candidates = new Set([ownerId]);
         if (ownerId.startsWith('gp_')) candidates.add(ownerId.slice(3));
         else candidates.add('gp_' + ownerId);
-        // 2) 동일 이름 기반 후보 확장 (기관/GP에 동일 이름 문서가 여러 개인 경우)
+        // 2) 동일 이름 기반 후보 확장 (로컬/원격 모두)
         const rawOwner = ownerId.startsWith('gp_') ? ownerId.slice(3) : ownerId;
         let ownerName = '';
         Object.values(institutionsData || {}).forEach(arr => (arr||[]).forEach(item => { if (item.id === rawOwner) ownerName = ownerName || (item.name || ''); }));
         Object.values(gpsData || {}).forEach(arr => (arr||[]).forEach(item => { if (item.id === rawOwner) ownerName = ownerName || (item.name || ''); }));
+        if (!ownerName && displayName) ownerName = displayName;
         if (ownerName) {
             Object.values(institutionsData || {}).forEach(arr => (arr||[]).forEach(item => { if ((item.name || '') === ownerName) candidates.add(item.id); }));
             Object.values(gpsData || {}).forEach(arr => (arr||[]).forEach(item => { if ((item.name || '') === ownerName) candidates.add(item.id); }));
+            // 원격 Firestore에서 이름으로 직접 탐색하여 문서 id 추가
+            try {
+                const qs1 = await db.collection('institutions').where('name','==',ownerName).get();
+                qs1.forEach(doc => candidates.add(String(doc.id)));
+            } catch (_) {}
+            try {
+                const qs2 = await db.collection('gps').where('name','==',ownerName).get();
+                qs2.forEach(doc => candidates.add(String(doc.id)));
+            } catch (_) {}
         }
         // 3) 후보 각각 조회 후 병합
-            let list = [];
-    for (const key of candidates) {
-        const qs = await db.collection('contacts').where('ownerId', '==', key).get();
-        qs.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-    }
-    if (list.length === 0) return false;
-    // 4) 로컬 키는 현재 열린 키(ownerId)와 raw/별칭 키 모두에 주입
-    let isInst = false;
-    Object.values(institutionsData || {}).forEach(arr => {
-        (arr || []).forEach(item => { if (item.id === rawOwner) isInst = true; });
-    });
-    institutionsContacts[ownerId] = list;
-    institutionsContacts[rawOwner] = list;
-    institutionsContacts['gp_' + rawOwner] = list;
-    if (!isInst) gpContacts[ownerId] = list;
-    saveDataToLocalStorage();
-    try { syncDataToServer(); } catch (_) {}
-    return true;
+        let list = [];
+        for (const key of candidates) {
+            const qs = await db.collection('contacts').where('ownerId', '==', key).get();
+            qs.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        }
+        if (list.length === 0) return false;
+        // 4) 로컬 키는 현재 열린 키(ownerId)와 raw/별칭/동명이인 id 모두에 주입
+        let isInst = false;
+        Object.values(institutionsData || {}).forEach(arr => {
+            (arr || []).forEach(item => { if (item.id === rawOwner) isInst = true; });
+        });
+        const allKeys = new Set([ownerId, rawOwner, 'gp_' + rawOwner]);
+        if (ownerName) {
+            Object.values(institutionsData || {}).forEach(arr => (arr||[]).forEach(item => { if ((item.name || '') === ownerName) { allKeys.add(item.id); allKeys.add('gp_' + item.id); } }));
+            Object.values(gpsData || {}).forEach(arr => (arr||[]).forEach(item => { if ((item.name || '') === ownerName) { allKeys.add(item.id); allKeys.add('gp_' + item.id); } }));
+        }
+        allKeys.forEach(k => { institutionsContacts[k] = list; });
+        if (!isInst) gpContacts[ownerId] = list;
+        saveDataToLocalStorage();
+        try { syncDataToServer(); } catch (_) {}
+        return true;
     } catch (e) {
         console.warn('recoverContactsForOwner 실패:', e);
         // Firestore 실패 시 RTDB 폴백 시도
@@ -4128,8 +4162,20 @@ async function normalizeAndFixContactsInFirestore(contactArr, instArr, gpArr) {
         const validOwnerIds = new Set();
         (instArr || []).forEach(it => { if (it && it.__id) validOwnerIds.add(String(it.__id)); });
         (gpArr || []).forEach(it => { if (it && it.__id) validOwnerIds.add(String(it.__id)); });
+        // 1-1) 레거시 id -> 현재 문서 id 매핑 테이블 구성
+        const legacyToNew = new Map();
+        (instArr || []).forEach(it => {
+            const legacy = it && it.id ? String(it.id) : '';
+            const fresh = it && it.__id ? String(it.__id) : '';
+            if (legacy && fresh && legacy !== fresh) legacyToNew.set(legacy, fresh);
+        });
+        (gpArr || []).forEach(it => {
+            const legacy = it && it.id ? String(it.id) : '';
+            const fresh = it && it.__id ? String(it.__id) : '';
+            if (legacy && fresh && legacy !== fresh) legacyToNew.set(legacy, fresh);
+        });
 
-        // 2) 각 contact에 대해 id, ownerId 정규화
+        // 2) 각 contact에 대해 id, ownerId 정규화/재매핑
         const batch = db.batch();
         (contactArr || []).forEach(c => {
             const docId = c.__id || c.id;
@@ -4138,11 +4184,17 @@ async function normalizeAndFixContactsInFirestore(contactArr, instArr, gpArr) {
             let owner = (c.ownerId || '').trim();
             if (!owner && typeof c.id === 'string') owner = c.id; // 혹시 잘못 저장된 케이스 보정
             if (owner.startsWith('gp_')) owner = owner.slice(3);
+            // 레거시 → 현재 문서 id로 매핑 시도
+            const remapped = legacyToNew.get(owner);
+            if (remapped) owner = remapped;
             const payload = { id: String(docId), ownerId: owner };
-            // owner가 유효 id가 아니면 그대로 두되, 최소한 id 필드만 일치시킴
-            if (!validOwnerIds.has(owner)) {
-                // 나중 재매핑을 위해 lastUpdated만 찍고 id만 고정
+            if (!owner) { // owner 자체가 비어있으면 우선 id만 고정
                 batch.set(ref, { id: String(docId) }, { merge: true });
+                return;
+            }
+            if (!validOwnerIds.has(owner)) {
+                // 유효하지 않더라도 정규화된 ownerId를 우선 기록해 추후 조회 가능하게 함
+                batch.set(ref, payload, { merge: true });
             } else {
                 batch.set(ref, payload, { merge: true });
             }
@@ -4151,4 +4203,38 @@ async function normalizeAndFixContactsInFirestore(contactArr, instArr, gpArr) {
     } catch (e) {
         console.warn('normalizeAndFixContactsInFirestore 실패:', e);
     }
+}
+
+// 하루 1회 자동 정규화: contacts.ownerId를 최신 문서 id로 보정하고 gp_ 접두사 제거
+async function autoNormalizeContactsDaily() {
+  try {
+    const key = 'lastAutoNormalizeAt';
+    const last = Number(localStorage.getItem(key) || '0');
+    const now = Date.now();
+    if (now - last < 24*60*60*1000) return; // 24시간 이내면 스킵
+    if (!db && firebase && firebase.firestore) db = firebase.firestore();
+    if (!db) return;
+    const fetchAll = async (col) => {
+      const out = [];
+      const qs = await db.collection(col).get();
+      qs.forEach(doc => out.push({ __id: doc.id, ...doc.data() }));
+      return out;
+    };
+    const [instArr, gpArr, contactArr] = await Promise.all([
+      fetchAll('institutions'), fetchAll('gps'), fetchAll('contacts')
+    ]);
+    // Firestore 내 문서 보정(batch)
+    try { await normalizeAndFixContactsInFirestore(contactArr, instArr, gpArr); } catch (_) {}
+    // 로컬 표시 키도 동기 보정 (동명이인 포함)
+    try {
+      (contactArr||[]).forEach(c => {
+        const raw = String((c.ownerId||'').replace(/^gp_/,'')).trim();
+        if (!raw) return;
+        institutionsContacts[raw] = institutionsContacts[raw] || [];
+      });
+      try { saveDataToLocalStorage(); } catch (_) {}
+    } catch (_) {}
+    try { await safeSyncToRtdb(); } catch (_) {}
+    localStorage.setItem(key, String(now));
+  } catch (_) {}
 }
