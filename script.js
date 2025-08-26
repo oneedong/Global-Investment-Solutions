@@ -3122,6 +3122,13 @@ function deleteInstitutionContact(institutionId, contactId) {
     gpContacts[raw] = (gpContacts[raw] || []).filter(c => c.id !== contactId);
     saveDataToLocalStorage();
     try { syncDataToServer(); } catch (_) {}
+    // Firestore에도 실제 문서를 삭제하여 onSnapshot 재주입을 방지
+    try {
+        if (!db && firebase && firebase.firestore) db = firebase.firestore();
+        if (db && contactId) {
+            db.collection('contacts').doc(String(contactId)).delete().catch(() => {});
+        }
+    } catch (_) {}
     renderInstitutionContacts(institutionId);
 }
 
