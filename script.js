@@ -2120,10 +2120,8 @@ function initializeRealTimeSync() {
 				const current = countMap(gpContacts);
 				if (incoming === 0 && current > 0) {
 					// ignore empty overwrite
-				} else if (incoming > 0 && current > 0) {
-					gpContacts = mergeContactsMaps(gpContacts, data.gpContacts);
-					changed = true;
 				} else if (incoming > 0) {
+					// 삭제가 되살아나는 문제를 막기 위해 병합이 아니라 전면 대체
 					gpContacts = data.gpContacts;
 					changed = true;
 				}
@@ -2133,11 +2131,8 @@ function initializeRealTimeSync() {
 				const current = countMap(institutionsContacts);
 				if (incoming === 0 && current > 0) {
 					// ignore empty overwrite
-				} else if (incoming > 0 && current > 0) {
-					institutionsContacts = mergeContactsMaps(institutionsContacts, data.institutionsContacts);
-					if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
-					changed = true;
 				} else if (incoming > 0) {
+					// 전면 대체하여 삭제가 전파되도록 함
 					institutionsContacts = data.institutionsContacts;
 					if (openContactsInstitutionId) renderInstitutionContacts(openContactsInstitutionId);
 					changed = true;
