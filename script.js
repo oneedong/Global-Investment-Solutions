@@ -2308,7 +2308,8 @@ function initializeFirestoreSync() {
                 if (incoming === 0 && current > 0) {
                     // ignore
                 } else if (incoming > 0 && current > 0) {
-                    institutionsContacts = mergeContactsMaps(institutionsContacts, merged);
+                    // 삭제가 복원되는 것을 방지: 병합 대신 수신 스냅샷으로 전면 대체
+                    institutionsContacts = merged;
                 } else {
                     institutionsContacts = merged;
                 }
@@ -2328,7 +2329,8 @@ function initializeFirestoreSync() {
                 if (gpIncoming === 0 && gpCurrent > 0) {
                     // ignore
                 } else if (gpIncoming > 0 && gpCurrent > 0) {
-                    gpContacts = mergeContactsMaps(gpContacts, gp);
+                    // 삭제 복원 방지: 병합 대신 전면 대체
+                    gpContacts = gp;
                 } else {
                     gpContacts = gp;
                 }
