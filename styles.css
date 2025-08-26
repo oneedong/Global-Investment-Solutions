@@ -2289,7 +2289,7 @@ select,
 select option { text-align: center; } 
 
 /* 내용이 잘리지 않도록 줄바꿈/폭 자동 조정 및 레이아웃 유연화 */
-.data-table { table-layout: auto; }
+.data-table { table-layout: fixed; }
 .data-table th, .data-table td { white-space: normal; word-break: break-word; }
 .data-table input, .data-table select { width: 100%; max-width: 100%; }
 

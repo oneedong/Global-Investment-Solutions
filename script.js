@@ -1749,7 +1749,6 @@ function openAddGpDialog() {
     });
     saveDataToLocalStorage();
     renderGpsDashboard();
-    syncDataToServer();
 
     setTimeout(() => {
         const lastRowFirstInput = document.querySelector('#gp-detail-tbody tr:last-child td:first-child input');
@@ -2076,6 +2075,15 @@ function initializeRealTimeSync() {
 		database.ref('/').on('value', (snapshot) => {
 			const data = snapshot.val();
 			if (!data) return;
+            // 자기 에코 무시: 내가 막 올린 업데이트는 잠시 무시해 불필요한 재렌더 방지
+            try {
+                const myId = generateUserId();
+                const updatedBy = String(data.updatedBy || '');
+                if (updatedBy && updatedBy === String(myId)) {
+                    const ts = Date.parse(data.lastUpdated || '') || 0;
+                    if (Date.now() - ts < 2000) return; // 2초 이내면 에코로 간주
+                }
+            } catch (_) {}
 			let changed = false;
 			if (data.tableData && JSON.stringify(data.tableData) !== JSON.stringify(tableData)) {
 				tableData = data.tableData;
@@ -2337,6 +2345,20 @@ function initializeFirestoreSync() {
 
 // Firebase로 데이터 동기화
 function syncDataToServer() {
+    // 디바운스/스로틀: 짧은 지연 후 1회만 실제 동기화 수행
+    if (!syncDataToServer.__debounce) {
+        syncDataToServer.__debounce = { timer: null, runNow: false, interval: 350 };
+    }
+    const info = syncDataToServer.__debounce;
+    if (!info.runNow) {
+        clearTimeout(info.timer);
+        info.timer = setTimeout(() => {
+            info.runNow = true;
+            try { syncDataToServer(); } finally { info.runNow = false; }
+        }, info.interval);
+        return;
+    }
+    
     if (navigator.onLine && database) {
         try {
             // 부분 업데이트 + 가드 적용
@@ -2868,14 +2890,11 @@ function openInstitutionContactsDashboard(institutionId, institutionName = '') {
     if (modal) modal.style.display = 'block';
     // 내용 렌더
     renderInstitutionContacts(institutionId);
-    // 비어있으면 서버에서 자동 복구 시도
+    // 항상 서버에서 자동 복구 시도(성공 시 즉시 재렌더)
     try {
-        const list = institutionsContacts[institutionId] || [];
-        if (!Array.isArray(list) || list.length === 0) {
-            recoverContactsForOwner(institutionId).then((ok) => {
-                if (ok) renderInstitutionContacts(institutionId);
-            }).catch(() => {});
-        }
+        recoverContactsForOwner(institutionId).then((ok) => {
+            if (ok) renderInstitutionContacts(institutionId);
+        }).catch(() => {});
     } catch (_) {}
 }
 
@@ -2896,15 +2915,12 @@ function openGpContactsDashboard(letter, gpId, gpName = '') {
     const modal = document.getElementById('institution-contacts-modal');
     if (modal) modal.style.display = 'block';
     renderInstitutionContacts(openContactsInstitutionId);
-    // 비어있으면 서버에서 자동 복구 시도 (GP)
+    // 항상 서버에서 자동 복구 시도 (GP)
     try {
         const ownerId = openContactsInstitutionId;
-        const list = institutionsContacts[ownerId] || [];
-        if (!Array.isArray(list) || list.length === 0) {
-            recoverContactsForOwner(ownerId).then((ok) => {
-                if (ok) renderInstitutionContacts(ownerId);
-            }).catch(() => {});
-        }
+        recoverContactsForOwner(ownerId).then((ok) => {
+            if (ok) renderInstitutionContacts(ownerId);
+        }).catch(() => {});
     } catch (_) {}
 }
 
