@@ -23,6 +23,200 @@ let selectedInstitutionCategory = '';
 let selectedGpLetter = 'A';
 // Firestore 핸들
 let db = null;
+// 삭제 tombstone(모든 클라이언트에서 숨길 연락처 기록) - { ownerId: { byId:Set, byEmail:Set } }
+let deletedTombstones = {}; // 예: { 'ownerA': { byId: {id1:1}, byEmail:{'a@b.com':1} } }
+
+// 삭제된 항목들을 추적하는 전역 변수들
+let deletedTableRows = new Set(); // 삭제된 테이블 행 ID들
+let deletedRfpRows = new Set(); // 삭제된 RFP 행 ID들
+let deletedInstitutions = new Set(); // 삭제된 기관 ID들
+let deletedGps = new Set(); // 삭제된 GP ID들
+let deletedContacts = new Set(); // 삭제된 연락처 ID들
+
+// tombstone 헬퍼
+function ensureTombstoneBucket(owner) {
+  const key = String(owner||'').trim();
+  if (!deletedTombstones[key]) deletedTombstones[key] = { byId: {}, byEmail: {} };
+  return deletedTombstones[key];
+}
+function ownerAliases(owner) {
+  const raw = String(owner||'').startsWith('gp_') ? owner.slice(3) : owner;
+  return new Set([String(owner||''), String(raw), 'gp_' + String(raw)]);
+}
+function isContactTombstoned(owner, contact) {
+  const aliases = ownerAliases(owner);
+  for (const k of aliases) {
+    const b = deletedTombstones[k];
+    if (!b) continue;
+    if (contact && contact.id && b.byId[String(contact.id)]) return true;
+    const em = (contact && contact.email ? String(contact.email).trim().toLowerCase() : '');
+    if (em && b.byEmail[em]) return true;
+  }
+  return false;
+}
+function addContactTombstone(owner, contact) {
+  const aliases = ownerAliases(owner);
+  aliases.forEach(k => {
+    const b = ensureTombstoneBucket(k);
+    if (contact && contact.id) b.byId[String(contact.id)] = 1;
+    const em = (contact && contact.email ? String(contact.email).trim().toLowerCase() : '');
+    if (em) b.byEmail[em] = 1;
+  });
+}
+
+// 삭제된 항목들을 localStorage에 저장
+function saveDeletedItems() {
+  try {
+    localStorage.setItem('deletedTableRows', JSON.stringify(Array.from(deletedTableRows)));
+    localStorage.setItem('deletedRfpRows', JSON.stringify(Array.from(deletedRfpRows)));
+    localStorage.setItem('deletedInstitutions', JSON.stringify(Array.from(deletedInstitutions)));
+    localStorage.setItem('deletedGps', JSON.stringify(Array.from(deletedGps)));
+    localStorage.setItem('deletedContacts', JSON.stringify(Array.from(deletedContacts)));
+  } catch (e) {
+    console.warn('삭제된 항목 저장 실패:', e);
+  }
+}
+
+// 삭제된 항목들을 localStorage에서 로드
+function loadDeletedItems() {
+  try {
+    const tableRows = localStorage.getItem('deletedTableRows');
+    const rfpRows = localStorage.getItem('deletedRfpRows');
+    const institutions = localStorage.getItem('deletedInstitutions');
+    const gps = localStorage.getItem('deletedGps');
+    const contacts = localStorage.getItem('deletedContacts');
+    
+    if (tableRows) deletedTableRows = new Set(JSON.parse(tableRows));
+    if (rfpRows) deletedRfpRows = new Set(JSON.parse(rfpRows));
+    if (institutions) deletedInstitutions = new Set(JSON.parse(institutions));
+    if (gps) deletedGps = new Set(JSON.parse(gps));
+    if (contacts) deletedContacts = new Set(JSON.parse(contacts));
+  } catch (e) {
+    console.warn('삭제된 항목 로드 실패:', e);
+  }
+}
+
+// 삭제된 항목들의 개수를 반환
+function getDeletedItemsCount() {
+  const total = deletedTableRows.size + deletedRfpRows.size + deletedInstitutions.size + 
+                deletedGps.size + deletedContacts.size;
+  return total;
+}
+
+// 삭제된 항목 개수를 버튼에 표시
+function updateDeletedItemsCount() {
+  const clearDeletedBtn = document.getElementById('clearDeletedBtn');
+  if (clearDeletedBtn) {
+    const count = getDeletedItemsCount();
+    if (count > 0) {
+      clearDeletedBtn.innerHTML = `<i class="fas fa-trash-alt"></i> 삭제된 항목 정리 (${count})`;
+      clearDeletedBtn.style.backgroundColor = '#ff6b6b';
+    } else {
+      clearDeletedBtn.innerHTML = `<i class="fas fa-trash-alt"></i> 삭제된 항목 정리`;
+      clearDeletedBtn.style.backgroundColor = '';
+    }
+  }
+}
+
+// 삭제된 항목들을 필터링하는 강력한 가드 함수
+function filterDeletedItems(data, type) {
+  if (!data) return data;
+  
+  switch (type) {
+    case 'tableData':
+      if (Array.isArray(data)) {
+        return data.filter(row => !deletedTableRows.has(row.id));
+      } else if (typeof data === 'object') {
+        const filtered = {};
+        Object.keys(data).forEach(category => {
+          if (Array.isArray(data[category])) {
+            filtered[category] = data[category].filter(row => !deletedTableRows.has(row.id));
+          }
+        });
+        return filtered;
+      }
+      break;
+    case 'rfpData':
+      if (Array.isArray(data)) {
+        return data.filter(rfp => !deletedRfpRows.has(rfp.id));
+      }
+      break;
+    case 'institutionsData':
+      if (typeof data === 'object') {
+        const filtered = {};
+        Object.keys(data).forEach(category => {
+          if (Array.isArray(data[category])) {
+            filtered[category] = data[category].filter(inst => !deletedInstitutions.has(inst.id));
+          }
+        });
+        return filtered;
+      }
+      break;
+    case 'gpsData':
+      if (typeof data === 'object') {
+        const filtered = {};
+        Object.keys(data).forEach(letter => {
+          if (Array.isArray(data[letter])) {
+            filtered[letter] = data[letter].filter(gp => !deletedGps.has(gp.id));
+          }
+        });
+        return filtered;
+      }
+      break;
+    case 'contacts':
+      if (typeof data === 'object') {
+        const filtered = {};
+        Object.keys(data).forEach(ownerId => {
+          if (Array.isArray(data[ownerId])) {
+            filtered[ownerId] = data[ownerId].filter(contact => !deletedContacts.has(contact.id));
+          }
+        });
+        return filtered;
+      }
+      break;
+  }
+  
+  return data;
+}
+
+// 삭제된 항목들을 영구적으로 제거
+function clearDeletedItems() {
+  const count = getDeletedItemsCount();
+  if (count === 0) {
+    alert('삭제된 항목이 없습니다.');
+    return;
+  }
+  
+  if (!confirm(`삭제된 항목 ${count}개를 영구적으로 제거하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+    return;
+  }
+  
+  try {
+    // 삭제된 항목들 초기화
+    deletedTableRows.clear();
+    deletedRfpRows.clear();
+    deletedInstitutions.clear();
+    deletedGps.clear();
+    deletedContacts.clear();
+    deletedTombstones = {};
+    
+    // localStorage에서 삭제된 항목들 제거
+    localStorage.removeItem('deletedTableRows');
+    localStorage.removeItem('deletedRfpRows');
+    localStorage.removeItem('deletedInstitutions');
+    localStorage.removeItem('deletedGps');
+    localStorage.removeItem('deletedContacts');
+    localStorage.removeItem('deletedTombstones');
+    
+    alert('삭제된 항목들이 영구적으로 제거되었습니다.');
+    
+    // 페이지 새로고침하여 모든 데이터를 다시 로드
+    window.location.reload();
+  } catch (e) {
+    console.error('삭제된 항목 제거 실패:', e);
+    alert('삭제된 항목 제거 중 오류가 발생했습니다.');
+  }
+}
 
 // Roadshow Scheduling 데이터
 let roadshowData = {
@@ -94,25 +288,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     };
                 }
-                // 복구 버튼 바인딩
-                const restoreBtn = document.getElementById('restoreBtn');
-                if (restoreBtn) {
-                    // 권한자만 보이도록 처리
-                    const email = (user && user.email ? user.email : '').toLowerCase();
-                    const canRestore = (email === 'dongmin.won@kbfg.com');
-                    restoreBtn.style.display = canRestore ? '' : 'none';
-                    restoreBtn.disabled = !canRestore;
-                    restoreBtn.onclick = async () => {
-                        if (!canRestore) { alert('복구 권한이 없습니다.'); return; }
-                        try {
-                            await restoreFromFirestore();
-                            alert('복구가 완료되었습니다.');
-                        } catch (e) {
-                            console.error(e);
-                            alert('복구 실패: ' + (e && e.message ? e.message : 'Console을 확인해주세요.'));
-                        }
-                    };
-                }
+
+                
+
             });
         }
         // onAuthStateChanged 도달 전이라도 클릭 무시되거나 NPE 방지용 1회 바인딩
@@ -126,6 +304,8 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeTabs();
         initializeDashboardTabs();
         loadDataFromLocalStorage();
+        loadDeletedItems(); // 삭제된 항목들 로드
+        updateDeletedItemsCount(); // 삭제된 항목 개수 업데이트
         
         // 각 탭 데이터가 없으면 배열로 초기화 (안전 가드)
         if (!Array.isArray(tableData['pe-pd'])) tableData['pe-pd'] = [];
@@ -191,6 +371,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const savedId = localStorage.getItem('savedUserId');
     if (savedId) {
       useridInput.value = savedId;
+      saveIdCheckbox.checked = true;
+    } else {
+      // 기본값으로 AV1 설정
+      useridInput.value = 'AV1';
       saveIdCheckbox.checked = true;
     }
 
@@ -271,6 +455,359 @@ function switchDashboard(dashboardName) {
     currentDashboard = dashboardName;
 }
 
+// 그룹핑 방식 전환
+function switchGrouping(type) {
+    // 버튼 상태 변경
+    document.querySelectorAll('.grouping-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(`${type}-grouping`).classList.add('active');
+    
+    // 리스트 표시/숨김
+    const categoryList = document.getElementById('institutions-category-list');
+    const regionList = document.getElementById('institutions-region-list');
+    
+    if (type === 'category') {
+        categoryList.style.display = 'block';
+        regionList.style.display = 'none';
+        renderInstitutionsDashboard();
+    } else if (type === 'region') {
+        categoryList.style.display = 'none';
+        regionList.style.display = 'block';
+        renderInstitutionsByRegion();
+    }
+}
+
+// 주소에서 지역 추출
+function extractRegionFromAddress(address) {
+    if (!address || typeof address !== 'string') return '기타';
+    
+    const addr = address.trim();
+    
+    // 서울 지역
+    if (addr.includes('강남') || addr.includes('강남대로')) return '강남';
+    if (addr.includes('서초') || addr.includes('서초대로')) return '서초';
+    if (addr.includes('종로') || addr.includes('종로구')) return '종로';
+    if (addr.includes('중구') || addr.includes('중구 ')) return '중구';
+    if (addr.includes('용산') || addr.includes('용산구')) return '용산';
+    if (addr.includes('성동') || addr.includes('성동구')) return '성동';
+    if (addr.includes('광진') || addr.includes('광진구')) return '광진';
+    if (addr.includes('동대문') || addr.includes('동대문구')) return '동대문';
+    if (addr.includes('중랑') || addr.includes('중랑구')) return '중랑';
+    if (addr.includes('성북') || addr.includes('성북구')) return '성북';
+    if (addr.includes('강북') || addr.includes('강북구')) return '강북';
+    if (addr.includes('도봉') || addr.includes('도봉구')) return '도봉';
+    if (addr.includes('노원') || addr.includes('노원구')) return '노원';
+    if (addr.includes('은평') || addr.includes('은평구')) return '은평';
+    if (addr.includes('서대문') || addr.includes('서대문구')) return '서대문';
+    if (addr.includes('마포') || addr.includes('마포구')) return '마포';
+    if (addr.includes('양천') || addr.includes('양천구')) return '양천';
+    if (addr.includes('강서') || addr.includes('강서구')) return '강서';
+    if (addr.includes('구로') || addr.includes('구로구')) return '구로';
+    if (addr.includes('금천') || addr.includes('금천구')) return '금천';
+    if (addr.includes('영등포') || addr.includes('영등포구')) return '영등포';
+    if (addr.includes('동작') || addr.includes('동작구')) return '동작';
+    if (addr.includes('관악') || addr.includes('관악구')) return '관악';
+    if (addr.includes('서초') || addr.includes('서초구')) return '서초';
+    if (addr.includes('강남') || addr.includes('강남구')) return '강남';
+    if (addr.includes('송파') || addr.includes('송파구')) return '송파';
+    if (addr.includes('강동') || addr.includes('강동구')) return '강동';
+    
+    // 경기도 지역
+    if (addr.includes('수원') || addr.includes('수원시')) return '수원';
+    if (addr.includes('성남') || addr.includes('성남시')) return '성남';
+    if (addr.includes('의정부') || addr.includes('의정부시')) return '의정부';
+    if (addr.includes('안양') || addr.includes('안양시')) return '안양';
+    if (addr.includes('부천') || addr.includes('부천시')) return '부천';
+    if (addr.includes('광명') || addr.includes('광명시')) return '광명';
+    if (addr.includes('평택') || addr.includes('평택시')) return '평택';
+    if (addr.includes('동두천') || addr.includes('동두천시')) return '동두천';
+    if (addr.includes('안산') || addr.includes('안산시')) return '안산';
+    if (addr.includes('고양') || addr.includes('고양시')) return '고양';
+    if (addr.includes('과천') || addr.includes('과천시')) return '과천';
+    if (addr.includes('구리') || addr.includes('구리시')) return '구리';
+    if (addr.includes('남양주') || addr.includes('남양주시')) return '남양주';
+    if (addr.includes('오산') || addr.includes('오산시')) return '오산';
+    if (addr.includes('시흥') || addr.includes('시흥시')) return '시흥';
+    if (addr.includes('군포') || addr.includes('군포시')) return '군포';
+    if (addr.includes('의왕') || addr.includes('의왕시')) return '의왕';
+    if (addr.includes('하남') || addr.includes('하남시')) return '하남';
+    if (addr.includes('용인') || addr.includes('용인시')) return '용인';
+    if (addr.includes('파주') || addr.includes('파주시')) return '파주';
+    if (addr.includes('이천') || addr.includes('이천시')) return '이천';
+    if (addr.includes('안성') || addr.includes('안성시')) return '안성';
+    if (addr.includes('김포') || addr.includes('김포시')) return '김포';
+    if (addr.includes('화성') || addr.includes('화성시')) return '화성';
+    if (addr.includes('광주') || addr.includes('광주시')) return '광주(경기)';
+    if (addr.includes('여주') || addr.includes('여주시')) return '여주';
+    if (addr.includes('양평') || addr.includes('양평군')) return '양평';
+    if (addr.includes('고양') || addr.includes('고양시')) return '고양';
+    if (addr.includes('연천') || addr.includes('연천군')) return '연천';
+    if (addr.includes('가평') || addr.includes('가평군')) return '가평';
+    if (addr.includes('포천') || addr.includes('포천시')) return '포천';
+    
+    // 인천 지역
+    if (addr.includes('인천') || addr.includes('인천시')) return '인천';
+    if (addr.includes('중구') && addr.includes('인천')) return '인천 중구';
+    if (addr.includes('동구') && addr.includes('인천')) return '인천 동구';
+    if (addr.includes('미추홀구') || addr.includes('남구') && addr.includes('인천')) return '인천 남구';
+    if (addr.includes('연수') || addr.includes('연수구')) return '인천 연수구';
+    if (addr.includes('남동') || addr.includes('남동구')) return '인천 남동구';
+    if (addr.includes('부평') || addr.includes('부평구')) return '인천 부평구';
+    if (addr.includes('계양') || addr.includes('계양구')) return '인천 계양구';
+    if (addr.includes('서구') && addr.includes('인천')) return '인천 서구';
+    if (addr.includes('강화') || addr.includes('강화군')) return '인천 강화군';
+    if (addr.includes('옹진') || addr.includes('옹진군')) return '인천 옹진군';
+    
+    // 부산 지역
+    if (addr.includes('부산') || addr.includes('부산시')) return '부산';
+    
+    // 대구 지역
+    if (addr.includes('대구') || addr.includes('대구시')) return '대구';
+    
+    // 대전 지역
+    if (addr.includes('대전') || addr.includes('대전시')) return '대전';
+    
+    // 광주 지역
+    if (addr.includes('광주') || addr.includes('광주시')) return '광주';
+    
+    // 울산 지역
+    if (addr.includes('울산') || addr.includes('울산시')) return '울산';
+    
+    // 기타 지역
+    if (addr.includes('충청') || addr.includes('충남') || addr.includes('충북')) return '충청도';
+    if (addr.includes('전라') || addr.includes('전남') || addr.includes('전북')) return '전라도';
+    if (addr.includes('경상') || addr.includes('경남') || addr.includes('경북')) return '경상도';
+    if (addr.includes('강원') || addr.includes('강원도')) return '강원도';
+    if (addr.includes('제주') || addr.includes('제주도')) return '제주도';
+    
+    return '기타';
+}
+
+// 지역별로 기관 렌더링
+function renderInstitutionsByRegion() {
+    const regionList = document.getElementById('institutions-region-list');
+    const detailTitle = document.getElementById('institutions-detail-title');
+    const detailTbody = document.getElementById('institutions-detail-tbody');
+    
+    // 지역별로 기관 그룹핑
+    const regionGroups = {};
+    let totalCount = 0;
+    
+    Object.entries(institutionsData).forEach(([category, institutions]) => {
+        institutions.forEach(institution => {
+            const region = extractRegionFromAddress(institution.address);
+            if (!regionGroups[region]) {
+                regionGroups[region] = [];
+            }
+            regionGroups[region].push(institution);
+            totalCount++;
+        });
+    });
+    
+    // 지역별 리스트 렌더링
+    regionList.innerHTML = '';
+    Object.keys(regionGroups).sort().forEach(region => {
+        const count = regionGroups[region].length;
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <span>${region}</span>
+            <span class="count">${count}</span>
+        `;
+        li.onclick = () => showInstitutionsByRegion(region, regionGroups[region]);
+        regionList.appendChild(li);
+    });
+    
+    // 총 기관 수 업데이트
+    document.getElementById('institutions-total-count').textContent = totalCount;
+    
+    // 기본적으로 첫 번째 지역 선택
+    const firstRegion = Object.keys(regionGroups).sort()[0];
+    if (firstRegion) {
+        showInstitutionsByRegion(firstRegion, regionGroups[firstRegion]);
+    }
+}
+
+// 특정 지역의 기관들 표시
+function showInstitutionsByRegion(region, institutions) {
+    const regionList = document.getElementById('institutions-region-list');
+    const detailTitle = document.getElementById('institutions-detail-title');
+    const detailTbody = document.getElementById('institutions-detail-tbody');
+    
+    // 활성 지역 표시
+    regionList.querySelectorAll('li').forEach(li => li.classList.remove('active'));
+    regionList.querySelectorAll('li').forEach(li => {
+        if (li.querySelector('span').textContent === region) {
+            li.classList.add('active');
+        }
+    });
+    
+    // 제목 업데이트
+    detailTitle.textContent = region;
+    
+    // 기관 목록 렌더링
+    detailTbody.innerHTML = '';
+    institutions.forEach(institution => {
+        const row = document.createElement('tr');
+        row.setAttribute('data-institution-id', institution.id);
+        row.innerHTML = `
+            <td>${institution.name || ''}</td>
+            <td>${institution.fullName || ''}</td>
+            <td>${institution.abbreviation || ''}</td>
+            <td>${institution.address || ''}</td>
+            <td>
+                <button class="contact-open-btn" onclick="openInstitutionContacts('${institution.id}')" title="연락처 보기">
+                    <i class="fas fa-address-book"></i>
+                </button>
+            </td>
+            <td class="action-col">
+                <div class="table-actions">
+                    <button class="table-action-btn edit" onclick="editInstitution('${institution.id}')" title="수정">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="table-action-btn delete" onclick="deleteInstitution('${getInstitutionCategory(institution.id)}','${institution.id}')" title="삭제">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+        detailTbody.appendChild(row);
+    });
+    
+    // 지도 뷰인 경우 지도 업데이트
+    if (isMapView) {
+        showInstitutionsOnMap();
+    }
+}
+
+// 기관의 카테고리 찾기
+function getInstitutionCategory(institutionId) {
+    for (const [category, institutions] of Object.entries(institutionsData)) {
+        if (institutions.find(inst => inst.id === institutionId)) {
+            return category;
+        }
+    }
+    return '기타';
+}
+
+// 지도 관련 변수
+let map = null;
+let markers = [];
+let isMapView = false;
+
+// 지도 뷰 토글
+function toggleMapView() {
+    const mapBtn = document.getElementById('map-view-btn');
+    const tableView = document.getElementById('table-view');
+    const mapView = document.getElementById('map-view');
+    
+    isMapView = !isMapView;
+    
+    if (isMapView) {
+        mapBtn.classList.add('active');
+        mapBtn.innerHTML = '<i class="fas fa-table"></i> 테이블로 보기';
+        tableView.style.display = 'none';
+        mapView.style.display = 'block';
+        initializeMap();
+        showInstitutionsOnMap();
+    } else {
+        mapBtn.classList.remove('active');
+        mapBtn.innerHTML = '<i class="fas fa-map"></i> 지도로 보기';
+        tableView.style.display = 'block';
+        mapView.style.display = 'none';
+    }
+}
+
+// 지도 초기화
+function initializeMap() {
+    if (map) return; // 이미 초기화된 경우
+    
+    const mapContainer = document.getElementById('seoul-map');
+    const options = {
+        center: new kakao.maps.LatLng(37.5665, 126.9780), // 서울시청
+        level: 8
+    };
+    
+    map = new kakao.maps.Map(mapContainer, options);
+}
+
+// 지도에 기관들 표시
+function showInstitutionsOnMap() {
+    if (!map) return;
+    
+    // 기존 마커들 제거
+    markers.forEach(marker => marker.setMap(null));
+    markers = [];
+    
+    // 현재 선택된 지역의 기관들만 표시
+    const currentGrouping = document.querySelector('.grouping-btn.active').id;
+    
+    let institutionsToShow = [];
+    
+    if (currentGrouping === 'category-grouping') {
+        // 카테고리별 보기인 경우 모든 기관 표시
+        Object.values(institutionsData).forEach(institutions => {
+            institutionsToShow = institutionsToShow.concat(institutions);
+        });
+    } else if (currentGrouping === 'region-grouping') {
+        // 지역별 보기인 경우 현재 선택된 지역의 기관들만 표시
+        const activeRegion = document.querySelector('#institutions-region-list li.active span').textContent;
+        Object.entries(institutionsData).forEach(([category, institutions]) => {
+            institutions.forEach(institution => {
+                const region = extractRegionFromAddress(institution.address);
+                if (region === activeRegion) {
+                    institutionsToShow.push(institution);
+                }
+            });
+        });
+    }
+    
+    // 주소를 좌표로 변환하여 마커 표시
+    institutionsToShow.forEach(institution => {
+        if (institution.address) {
+            const geocoder = new kakao.maps.services.Geocoder();
+            geocoder.addressSearch(institution.address, function(result, status) {
+                if (status === kakao.maps.services.Status.OK) {
+                    const coords = new kakao.maps.LatLng(result[0].y, result[0].x);
+                    
+                    // 마커 생성
+                    const marker = new kakao.maps.Marker({
+                        position: coords,
+                        map: map
+                    });
+                    
+                    // 인포윈도우 생성
+                    const infowindow = new kakao.maps.InfoWindow({
+                        content: `
+                            <div style="padding: 10px; min-width: 200px;">
+                                <h4 style="margin: 0 0 5px 0; font-size: 14px;">${institution.name || '기관명 없음'}</h4>
+                                <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${institution.address || '주소 없음'}</p>
+                                <button onclick="openInstitutionContacts('${institution.id}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 11px;">
+                                    연락처 보기
+                                </button>
+                            </div>
+                        `
+                    });
+                    
+                    // 마커 클릭 시 인포윈도우 표시
+                    kakao.maps.event.addListener(marker, 'click', function() {
+                        infowindow.open(map, marker);
+                    });
+                    
+                    markers.push(marker);
+                }
+            });
+        }
+    });
+}
+
+// 지역별 보기에서 지역 변경 시 지도 업데이트
+function updateMapForRegion() {
+    if (isMapView) {
+        showInstitutionsOnMap();
+    }
+}
+
 // 탭 전환
 function switchTab(tabName) {
     // 탭 버튼 상태 변경
@@ -318,9 +855,35 @@ function addTableRow(category) {
 // 테이블 행 삭제
 function deleteTableRow(category, rowId) {
     if (confirm('정말로 이 행을 삭제하시겠습니까?')) {
+        // 즉시 UI에서 제거
+        const row = document.querySelector(`[data-row-id="${rowId}"]`);
+        if (row) {
+            row.remove();
+            // 빈 테이블 처리
+            const tbody = document.getElementById(`${category}-tbody`);
+            if (tbody && tbody.children.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="empty-table">
+                            <i class="fas fa-table"></i>
+                            <h3>데이터가 없습니다</h3>
+                            <p>행 추가 버튼을 클릭하여 데이터를 추가해보세요!</p>
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+        
+        // 삭제된 항목 추적에 추가
+        deletedTableRows.add(rowId);
+        saveDeletedItems();
+        updateDeletedItemsCount();
+        
+        // 데이터에서 제거
         tableData[category] = tableData[category].filter(row => row.id !== rowId);
         saveDataToLocalStorage();
-        renderTable();
+        
+        // 즉시 서버 동기화
         syncDataToServer();
     }
 }
@@ -519,9 +1082,35 @@ function addRfpRow() {
 // RFP 행 삭제
 function deleteRfpRow(rfpId) {
     if (confirm('정말로 이 공고를 삭제하시겠습니까?')) {
+        // 즉시 UI에서 제거
+        const row = document.querySelector(`[data-rfp-id="${rfpId}"]`);
+        if (row) {
+            row.remove();
+            // 빈 테이블 처리
+            const tbody = document.querySelector('#rfp-table tbody');
+            if (tbody && tbody.children.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="empty-table">
+                            <i class="fas fa-table"></i>
+                            <h3>데이터가 없습니다</h3>
+                            <p>공고 추가 버튼을 클릭하여 데이터를 추가해보세요!</p>
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+        
+        // 삭제된 항목 추적에 추가
+        deletedRfpRows.add(rfpId);
+        saveDeletedItems();
+        updateDeletedItemsCount();
+        
+        // 데이터에서 제거
         rfpData = rfpData.filter(rfp => rfp.id !== rfpId);
         saveDataToLocalStorage();
-        renderRfpTable();
+        
+        // 즉시 서버 동기화
         syncDataToServer();
     }
 }
@@ -1309,9 +1898,35 @@ function editInstitution(category, institutionId) {
 
 function deleteInstitution(category, institutionId) {
     if (confirm('정말로 이 기관을 삭제하시겠습니까?')) {
+        // 즉시 UI에서 제거
+        const row = document.querySelector(`[data-institution-id="${institutionId}"]`);
+        if (row) {
+            row.remove();
+            // 빈 테이블 처리
+            const tbody = document.querySelector(`#${category}-institutions-tbody`);
+            if (tbody && tbody.children.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="empty-table">
+                            <i class="fas fa-building"></i>
+                            <h3>데이터가 없습니다</h3>
+                            <p>기관 추가 버튼을 클릭하여 데이터를 추가해보세요!</p>
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+        
+        // 삭제된 항목 추적에 추가
+        deletedInstitutions.add(institutionId);
+        saveDeletedItems();
+        updateDeletedItemsCount();
+        
+        // 데이터에서 제거
         institutionsData[category] = institutionsData[category].filter(inst => inst.id !== institutionId);
         saveDataToLocalStorage();
-        renderInstitutionsDashboard();
+        
+        // 즉시 서버 동기화
         syncDataToServer();
     }
 }
@@ -1828,9 +2443,35 @@ function addGpToCategory(letter) {
 
 function deleteGpFromLetter(letter, gpId) {
     if (!confirm('정말로 이 GP를 삭제하시겠습니까?')) return;
+    // 즉시 UI에서 제거
+    const row = document.querySelector(`[data-gp-id="${gpId}"]`);
+    if (row) {
+        row.remove();
+        // 빈 테이블 처리
+        const tbody = document.querySelector(`#${letter}-gps-tbody`);
+        if (tbody && tbody.children.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="empty-table">
+                        <i class="fas fa-users"></i>
+                        <h3>데이터가 없습니다</h3>
+                        <p>GP 추가 버튼을 클릭하여 데이터를 추가해보세요!</p>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+    
+    // 삭제된 항목 추적에 추가
+    deletedGps.add(gpId);
+    saveDeletedItems();
+    updateDeletedItemsCount();
+    
+    // 데이터에서 제거
     gpsData[letter] = (gpsData[letter] || []).filter(g => g.id !== gpId);
     saveDataToLocalStorage();
-    renderGpsDashboard();
+    
+    // 즉시 서버 동기화
     syncDataToServer();
 }
 
@@ -1988,7 +2629,8 @@ function isInstitutionsDataEmpty(data) {
 function generateUserId() {
     let userId = localStorage.getItem('userId');
     if (!userId) {
-        userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        // AV1 계정으로 통일
+        userId = 'AV1';
         localStorage.setItem('userId', userId);
     }
     return userId;
@@ -2018,6 +2660,12 @@ function loadDataFromLocalStorage() {
     const savedData = localStorage.getItem('tableData');
     if (savedData) {
         tableData = JSON.parse(savedData);
+        // 삭제된 항목들 필터링
+        Object.keys(tableData).forEach(category => {
+            if (Array.isArray(tableData[category])) {
+                tableData[category] = tableData[category].filter(row => !deletedTableRows.has(row.id));
+            }
+        });
     }
     // 안전하게 키 초기화
     if (!tableData || typeof tableData !== 'object') tableData = {};
@@ -2028,11 +2676,21 @@ function loadDataFromLocalStorage() {
     const savedRfpData = localStorage.getItem('rfpData');
     if (savedRfpData) {
         rfpData = JSON.parse(savedRfpData);
+        // 삭제된 항목들 필터링
+        if (Array.isArray(rfpData)) {
+            rfpData = rfpData.filter(rfp => !deletedRfpRows.has(rfp.id));
+        }
     }
     
     const savedInstitutionsData = localStorage.getItem('institutionsData');
     if (savedInstitutionsData) {
         institutionsData = JSON.parse(savedInstitutionsData);
+        // 삭제된 항목들 필터링
+        Object.keys(institutionsData).forEach(category => {
+            if (Array.isArray(institutionsData[category])) {
+                institutionsData[category] = institutionsData[category].filter(inst => !deletedInstitutions.has(inst.id));
+            }
+        });
         // 누락된 신규 카테고리 보정
         if (!institutionsData['운용사']) institutionsData['운용사'] = [];
         // 기존 저장 데이터가 사실상 비어있다면 기본 데이터 시드
@@ -2047,14 +2705,32 @@ function loadDataFromLocalStorage() {
     const savedGpsData = localStorage.getItem('gpsData');
     if (savedGpsData) {
         gpsData = JSON.parse(savedGpsData);
+        // 삭제된 항목들 필터링
+        Object.keys(gpsData).forEach(letter => {
+            if (Array.isArray(gpsData[letter])) {
+                gpsData[letter] = gpsData[letter].filter(gp => !deletedGps.has(gp.id));
+            }
+        });
     }
     const savedContacts = localStorage.getItem('institutionsContacts');
     if (savedContacts) {
         institutionsContacts = JSON.parse(savedContacts);
+        // 삭제된 항목들 필터링
+        Object.keys(institutionsContacts).forEach(ownerId => {
+            if (Array.isArray(institutionsContacts[ownerId])) {
+                institutionsContacts[ownerId] = institutionsContacts[ownerId].filter(contact => !deletedContacts.has(contact.id));
+            }
+        });
     }
     const savedGpContacts = localStorage.getItem('gpContacts');
     if (savedGpContacts) {
         gpContacts = JSON.parse(savedGpContacts);
+        // 삭제된 항목들 필터링
+        Object.keys(gpContacts).forEach(ownerId => {
+            if (Array.isArray(gpContacts[ownerId])) {
+                gpContacts[ownerId] = gpContacts[ownerId].filter(contact => !deletedContacts.has(contact.id));
+            }
+        });
     }
     const savedRoadshow = localStorage.getItem('roadshowData');
     if (savedRoadshow) {
@@ -2090,22 +2766,27 @@ function initializeRealTimeSync() {
             } catch (_) {}
 			let changed = false;
 			if (data.tableData && JSON.stringify(data.tableData) !== JSON.stringify(tableData)) {
-				tableData = data.tableData;
+				// 삭제된 항목들 필터링
+				const filteredTableData = filterDeletedItems(data.tableData, 'tableData');
+				tableData = filteredTableData;
 				renderTable();
 				changed = true;
 			}
 			if (data.rfpData && JSON.stringify(data.rfpData) !== JSON.stringify(rfpData)) {
-				rfpData = data.rfpData;
+				// 삭제된 항목들 필터링
+				rfpData = filterDeletedItems(data.rfpData, 'rfpData');
 				renderRfpTable();
 				changed = true;
 			}
 			if (data.institutionsData && JSON.stringify(data.institutionsData) !== JSON.stringify(institutionsData)) {
-				institutionsData = data.institutionsData;
+				// 삭제된 항목들 필터링
+				institutionsData = filterDeletedItems(data.institutionsData, 'institutionsData');
 				renderInstitutionsDashboard();
 				changed = true;
 			}
 			if (data.gpsData && JSON.stringify(data.gpsData) !== JSON.stringify(gpsData)) {
-				gpsData = data.gpsData;
+				// 삭제된 항목들 필터링
+				gpsData = filterDeletedItems(data.gpsData, 'gpsData');
 				// 동기화 데이터에도 전략 정규화 적용
 				normalizeGpStrategies();
 				renderGpsDashboard();
@@ -2170,13 +2851,27 @@ function initializeFirestoreSync() {
         // 로그인 이후에만 리스너 붙이기
         firebase.auth().onAuthStateChanged(u => {
             if (!u) return;
+            
+            // 삭제된 항목들이 로드되었는지 확인
+            if (deletedTableRows.size === 0 && deletedRfpRows.size === 0 && 
+                deletedInstitutions.size === 0 && deletedGps.size === 0 && 
+                deletedContacts.size === 0) {
+                loadDeletedItems();
+            }
             // 부트스트랩용 헬퍼: Firestore의 contacts/institutions/gps를 즉시 한 번 끌어와 병합
             window.ensureContactsBootstrapped = async function ensureContactsBootstrapped() {
                 try {
                     const colToArr = async (name) => {
                         const out = [];
                         const qs = await db.collection(name).get();
-                        qs.forEach(doc => out.push({ id: doc.id, ...doc.data() }));
+                        qs.forEach(doc => {
+                            const data = { id: doc.id, ...doc.data() };
+                            // 삭제된 항목은 제외
+                            if (name === 'contacts' && deletedContacts.has(doc.id)) return;
+                            if (name === 'institutions' && deletedInstitutions.has(doc.id)) return;
+                            if (name === 'gps' && deletedGps.has(doc.id)) return;
+                            out.push(data);
+                        });
                         return out;
                     };
                     const [contactsArr, instArr, gpArr] = await Promise.all([
@@ -2233,7 +2928,13 @@ function initializeFirestoreSync() {
             // 예시: rfp 컬렉션 실시간 반영
             db.collection('rfp').onSnapshot((snap) => {
                 const arr = [];
-                snap.forEach(doc => arr.push(doc.data()));
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    // 삭제된 항목은 제외
+                    if (!deletedRfpRows.has(data.id)) {
+                        arr.push(data);
+                    }
+                });
                 if (JSON.stringify(arr) !== JSON.stringify(rfpData)) {
                     rfpData = arr;
                     renderRfpTable();
@@ -2246,7 +2947,10 @@ function initializeFirestoreSync() {
                     const data = doc.data();
                     const cat = data.category || '기타';
                     const item = { ...data, id: doc.id };
-                    (byCat[cat] = byCat[cat] || []).push(item);
+                    // 삭제된 항목은 제외
+                    if (!deletedInstitutions.has(item.id)) {
+                        (byCat[cat] = byCat[cat] || []).push(item);
+                    }
                 });
                 if (JSON.stringify(byCat) !== JSON.stringify(institutionsData)) {
                     institutionsData = byCat;
@@ -2260,7 +2964,10 @@ function initializeFirestoreSync() {
                     const data = doc.data();
                     const L = (data.name || 'A').charAt(0).toUpperCase();
                     const item = { ...data, id: doc.id };
-                    (byLetter[L] = byLetter[L] || []).push(item);
+                    // 삭제된 항목은 제외
+                    if (!deletedGps.has(item.id)) {
+                        (byLetter[L] = byLetter[L] || []).push(item);
+                    }
                 });
                 // 정규화 후 비교
                 const prev = JSON.stringify(gpsData);
@@ -2276,7 +2983,10 @@ function initializeFirestoreSync() {
                 snap.forEach(doc => {
                     const data = doc.data();
                     const tab = data.tab || 'pe-pd';
-                    byTab[tab].push(data);
+                    // 삭제된 항목은 제외
+                    if (!deletedTableRows.has(data.id)) {
+                        byTab[tab].push(data);
+                    }
                 });
                 if (JSON.stringify(byTab) !== JSON.stringify(tableData)) {
                     tableData = byTab;
@@ -2290,7 +3000,10 @@ function initializeFirestoreSync() {
                     const data = doc.data();
                     const owner = (data.ownerId || '').trim();
                     if (!owner) return;
-                    (map[owner] = map[owner] || []).push({ ...data, id: doc.id });
+                    // 삭제된 항목은 제외
+                    if (!deletedContacts.has(doc.id)) {
+                        (map[owner] = map[owner] || []).push({ ...data, id: doc.id });
+                    }
                 });
                 // 공용 맵에 모두 저장 (UI는 institutionsContacts를 참조)
                 // 별칭 키(gp_접두사)도 함께 구성하여 UI 불일치 방지
@@ -2958,6 +3671,8 @@ function renderInstitutionContacts(institutionId, displayName = '') {
 		});
 		list = merged;
 	}
+	// tombstone 필터링
+	list = (list || []).filter(c => !isContactTombstoned(institutionId, c));
 
 	// 페이지 계산
 	const total = Array.isArray(list) ? list.length : 0;
@@ -3116,9 +3831,37 @@ function updateInstitutionContact(institutionId, contactId, field, value) {
 // 팝업 대시보드: 연락처 삭제
 function deleteInstitutionContact(institutionId, contactId) {
     if (!confirm('이 연락처를 삭제할까요?')) return;
+    
+    // 즉시 UI에서 제거
+    const row = document.querySelector(`[data-contact-id="${contactId}"]`);
+    if (row) {
+        row.remove();
+        // 빈 테이블 처리
+        const tbody = document.querySelector('#institution-contacts-tbody');
+        if (tbody && tbody.children.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="empty-table">
+                        <i class="fas fa-address-book"></i>
+                        <h3>연락처가 없습니다</h3>
+                        <p>연락처 추가 버튼을 클릭하여 데이터를 추가해보세요!</p>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+    
+    // 삭제된 항목 추적에 추가
+    deletedContacts.add(contactId);
+    saveDeletedItems();
+    updateDeletedItemsCount();
+    
     // 삭제 대상의 필드 스냅샷 확보(동일 이메일/이름으로 저장된 중복 문서까지 제거하기 위함)
     const currentList = institutionsContacts[institutionId] || [];
     const snapshotItem = currentList.find(c => c.id === contactId) || {};
+
+    // tombstone 추가(즉시 숨김 + 모든 별칭 키)
+    addContactTombstone(institutionId, snapshotItem);
 
     // 두 저장소 모두에서 삭제 시도
     institutionsContacts[institutionId] = (institutionsContacts[institutionId] || []).filter(c => c.id !== contactId);
@@ -3127,6 +3870,8 @@ function deleteInstitutionContact(institutionId, contactId) {
     gpContacts[institutionId] = (gpContacts[institutionId] || []).filter(c => c.id !== contactId);
     gpContacts[raw] = (gpContacts[raw] || []).filter(c => c.id !== contactId);
     saveDataToLocalStorage();
+    
+    // 즉시 서버 동기화
     try { syncDataToServer(); } catch (_) {}
 
     // Firestore: owner의 모든 별칭 키에서 동일 문서/동일 이메일(+이름) 문서를 일괄 삭제
@@ -3140,7 +3885,7 @@ function deleteInstitutionContact(institutionId, contactId) {
                 qs.forEach(doc => {
                     const data = doc.data() || {};
                     const sameId = String(doc.id) === String(contactId);
-                    const sameEmail = (data.email || '') && (snapshotItem.email || '') && String(data.email).trim() === String(snapshotItem.email).trim();
+                    const sameEmail = (data.email || '') && (snapshotItem.email || '') && String(data.email).trim().toLowerCase() === String(snapshotItem.email).trim().toLowerCase();
                     const sameName = (data.name || '') && (snapshotItem.name || '') && String(data.name).trim() === String(snapshotItem.name).trim();
                     if (sameId || (sameEmail && (!snapshotItem.name || sameName))) {
                         try { db.collection('contacts').doc(String(doc.id)).delete(); } catch (_) {}
@@ -3600,11 +4345,24 @@ function updateRoadshowFund(id, value) {
 }
 function deleteRoadshowFund(id) {
     if (!confirm('이 펀드를 삭제할까요?')) return;
+    // 즉시 UI에서 제거
+    const item = document.querySelector(`[data-fund-id="${id}"]`);
+    if (item) {
+        item.remove();
+    }
+    
+    // 삭제된 항목 추적에 추가
+    deletedTableRows.add(id);
+    saveDeletedItems();
+    updateDeletedItemsCount();
+    
     roadshowData.funds = (roadshowData.funds || []).filter(f => f.id !== id);
     // 해당 펀드의 미팅도 함께 정리(선택)
     roadshowData.meetings = (roadshowData.meetings || []).filter(m => m.fundId !== id);
     saveDataToLocalStorage();
-    renderRoadshow();
+    
+    // 즉시 서버 동기화
+    syncDataToServer();
 }
 
 function openRoadshowMeetingModal(opts = {}) {
@@ -3827,9 +4585,22 @@ function updateRoadshowInvestor(id, field, value) {
 
 function deleteRoadshowInvestor(id) {
     if (!confirm('이 Investor를 삭제할까요?')) return;
+    // 즉시 UI에서 제거
+    const row = document.querySelector(`[data-investor-id="${id}"]`);
+    if (row) {
+        row.remove();
+    }
+    
+    // 삭제된 항목 추적에 추가
+    deletedTableRows.add(id);
+    saveDeletedItems();
+    updateDeletedItemsCount();
+    
     roadshowData.investors = (roadshowData.investors || []).filter(i => i.id !== id);
     saveDataToLocalStorage();
-    renderRoadshow();
+    
+    // 즉시 서버 동기화
+    syncDataToServer();
 }
 
 function closeRoadshowMeetingModal() {
@@ -3854,7 +4625,7 @@ function closeRoadshowMeetingModal() {
 async function restoreFromFirestore() {
     const current = firebase && firebase.auth && firebase.auth().currentUser;
     const email = (current && current.email ? current.email : '').toLowerCase();
-    if (!(email === 'dongmin.won@kbfg.com')) {
+    if (!(email === 'av1@kbfg.com' || email === 'av1')) {
         throw new Error('복구 권한이 없습니다.');
     }
     if (!db && firebase && firebase.firestore) db = firebase.firestore();
@@ -3863,7 +4634,16 @@ async function restoreFromFirestore() {
     const fetchAll = async (col) => {
         const out = [];
         const qs = await db.collection(col).get();
-        qs.forEach(doc => out.push({ __id: doc.id, ...doc.data() }));
+        qs.forEach(doc => {
+            const data = { __id: doc.id, ...doc.data() };
+            // 삭제된 항목은 제외
+            if (col === 'rfp' && deletedRfpRows.has(data.id)) return;
+            if (col === 'institutions' && deletedInstitutions.has(doc.id)) return;
+            if (col === 'gps' && deletedGps.has(doc.id)) return;
+            if (col === 'tableData' && deletedTableRows.has(data.id)) return;
+            if (col === 'contacts' && deletedContacts.has(doc.id)) return;
+            out.push(data);
+        });
         return out;
     };
 
@@ -4261,3 +5041,20 @@ async function autoNormalizeContactsDaily() {
     localStorage.setItem(key, String(now));
   } catch (_) {}
 }
+
+// tombstone 저장/복구: 로컬/RTDB와 함께 동기화
+(function attachTombstonePersistence(){
+  const isDashboardPage = !!document.querySelector('.dashboard-container');
+  if (!isDashboardPage) return;
+  try {
+    const raw = localStorage.getItem('deletedTombstones');
+    if (raw) deletedTombstones = JSON.parse(raw) || {};
+  } catch(_) {}
+  const _save = () => { try { localStorage.setItem('deletedTombstones', JSON.stringify(deletedTombstones||{})); } catch(_) {} };
+  // 기존 saveDataToLocalStorage 확장: tombstone도 저장
+  const _origSave = saveDataToLocalStorage;
+  window.saveDataToLocalStorage = function(){
+    _origSave();
+    _save();
+  };
+})();

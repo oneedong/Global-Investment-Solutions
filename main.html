@@ -33,9 +33,7 @@
               <a class="add-row-btn" href="https://us06web.zoom.us/meeting/schedule?ampDeviceId=beb7580d-62db-48a3-b8e3-19cad061687f&ampSessionId=1755737517783&ampDeviceId=beb7580d-62db-48a3-b8e3-19cad061687f&ampSessionId=1755737517783" target="_blank" title="ID: eungyo.hong@kbfg.com, PW: Password1!">
                   <i class="fas fa-video"></i> Zoom 예약
               </a>
-              <button class="add-row-btn" id="restoreBtn" title="Firestore에서 복구">
-                  <i class="fas fa-history"></i> 복구
-              </button>
+
               <!-- 주차 등록 -->
               <a class="add-row-btn" href="https://a21453.pweb.kr/login" target="_blank" title="ID: KL0, PW: 202208">
                   <i class="fas fa-parking"></i> 주차 등록
@@ -319,37 +317,66 @@
                           <span class="label">총 기관 수</span>
                           <span class="value" id="institutions-total-count">0</span>
                       </div>
+                      
+                      <!-- 분류 방식 선택 -->
+                      <div class="grouping-options">
+                          <button class="grouping-btn active" id="category-grouping" onclick="switchGrouping('category')">
+                              <i class="fas fa-tags"></i> 카테고리별
+                          </button>
+                          <button class="grouping-btn" id="region-grouping" onclick="switchGrouping('region')">
+                              <i class="fas fa-map-marker-alt"></i> 지역별
+                          </button>
+                      </div>
+                      
                       <ul id="institutions-category-list" class="category-list">
                           <!-- 카테고리들이 여기에 동적으로 추가됩니다 -->
                       </ul>
-                  </div>
-                  <div class="institutions-detail">
-                      <div class="detail-header">
-                          <h3 id="institutions-detail-title">카테고리</h3>
-                          <div class="detail-actions">
-                              <button class="add-institution-btn" onclick="openAddInstitutionDialog()">
-                                  <i class="fas fa-plus"></i> 기관 추가
-                              </button>
-                          </div>
-                      </div>
-                      <div class="table-container">
-                          <table class="data-table" id="institutions-detail-table">
-                              <thead>
-                                  <tr>
-                                      <th>한글명</th>
-                                      <th>영문 전체 명칭</th>
-                                      <th>영문 약어</th>
-                                      <th>주소</th>
-                                      <th>Contact</th>
-                                      <th class="action-col">작업</th>
-                                  </tr>
-                              </thead>
-                              <tbody id="institutions-detail-tbody">
-                                  <!-- 기관들이 여기에 동적으로 추가됩니다 -->
-                              </tbody>
-                          </table>
+                      
+                      <ul id="institutions-region-list" class="category-list" style="display: none;">
+                          <!-- 지역별 그룹이 여기에 동적으로 추가됩니다 -->
+                      </ul>
+                      
+                      <!-- 지도 보기 버튼 -->
+                      <div class="map-view-option" style="margin-top: 16px;">
+                          <button class="map-view-btn" id="map-view-btn" onclick="toggleMapView()">
+                              <i class="fas fa-map"></i> 지도로 보기
+                          </button>
                       </div>
                   </div>
+                                      <div class="institutions-detail">
+                        <div class="detail-header">
+                            <h3 id="institutions-detail-title">카테고리</h3>
+                            <div class="detail-actions">
+                                <button class="add-institution-btn" onclick="openAddInstitutionDialog()">
+                                    <i class="fas fa-plus"></i> 기관 추가
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- 테이블 뷰 -->
+                        <div class="table-container" id="table-view">
+                            <table class="data-table" id="institutions-detail-table">
+                                <thead>
+                                    <tr>
+                                        <th>한글명</th>
+                                        <th>영문 전체 명칭</th>
+                                        <th>영문 약어</th>
+                                        <th>주소</th>
+                                        <th>Contact</th>
+                                        <th class="action-col">작업</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="institutions-detail-tbody">
+                                    <!-- 기관들이 여기에 동적으로 추가됩니다 -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- 지도 뷰 -->
+                        <div class="map-container" id="map-view" style="display: none;">
+                            <div id="seoul-map" style="width: 100%; height: 600px;"></div>
+                        </div>
+                    </div>
               </div>
           </div>
 
@@ -626,6 +653,9 @@
       <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
       <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
       <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
+      
+      <!-- 카카오맵 API -->
+      <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_MAP_API_KEY&libraries=services"></script>
       
       <!-- Firebase 설정 -->
       <script src="firebase-config.js?v=20250820"></script>
