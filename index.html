@@ -9,6 +9,21 @@
   <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js?v=20250820"></script>
+  <script src="app-config.js"></script>
+  <script>
+    (function() {
+      try {
+        var isLocal = (location.protocol === 'file:') || (/^(localhost|127\.0\.0\.1|\[::1\])$/i).test(location.hostname);
+        if (!isLocal) {
+          var s = document.createElement('script');
+          var appKey = (window.APP_CONFIG && window.APP_CONFIG.KAKAO_APP_KEY) ? window.APP_CONFIG.KAKAO_APP_KEY : 'YOUR_KAKAO_MAP_API_KEY';
+          s.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey=' + encodeURIComponent(appKey) + '&libraries=services,clusterer';
+          s.async = true;
+          document.head.appendChild(s);
+        }
+      } catch (e) { /* no-op */ }
+    })();
+  </script>
   <style>
     body {
       min-height: 100vh;

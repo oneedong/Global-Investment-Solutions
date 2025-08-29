@@ -365,6 +365,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const useridInput = document.getElementById('userid');
     const passwordInput = document.getElementById('password');
     const saveIdCheckbox = document.getElementById('saveId');
+    const savePwCheckbox = document.getElementById('savePw');
     const loginError = document.getElementById('loginError');
 
     // 아이디 저장 불러오기
@@ -377,6 +378,48 @@ document.addEventListener('DOMContentLoaded', function() {
       useridInput.value = 'AV1';
       saveIdCheckbox.checked = true;
     }
+
+    // 안전한 비밀번호 저장/복원 유틸 (AES-GCM with per-session key, fallback base64)
+    async function getCryptoKey() {
+      try {
+        const raw = (await sha256('kbsec-local-pw-key'));
+        const bytes = new Uint8Array(raw.match(/.{1,2}/g).map(h=>parseInt(h,16))).slice(0,32);
+        return await crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, ['encrypt','decrypt']);
+      } catch (_) { return null; }
+    }
+    async function encryptPw(key, text){
+      try {
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const enc = new TextEncoder().encode(text);
+        const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, enc);
+        const out = new Uint8Array(iv.length + new Uint8Array(ct).length);
+        out.set(iv,0); out.set(new Uint8Array(ct), iv.length);
+        return btoa(String.fromCharCode(...out));
+      } catch (_) { return btoa(unescape(encodeURIComponent(text))); }
+    }
+    async function decryptPw(key, b64){
+      try {
+        const buf = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        const iv = buf.slice(0,12); const data = buf.slice(12);
+        const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, data);
+        return new TextDecoder().decode(pt);
+      } catch (_) { try { return decodeURIComponent(escape(atob(b64))); } catch { return ''; } }
+    }
+
+    // 저장된 비밀번호 복원 및 자동 로그인 옵션
+    (async () => {
+      try {
+        const encPw = localStorage.getItem('savedUserPw');
+        if (encPw) {
+          const key = await getCryptoKey();
+          const pw = await decryptPw(key, encPw);
+          if (pw) {
+            passwordInput.value = pw;
+            if (savePwCheckbox) savePwCheckbox.checked = true;
+          }
+        }
+      } catch (_) {}
+    })();
 
     // 인증 상태 관찰: 인증되면 메인으로, 아니면 대기
     if (firebase && firebase.auth) {
@@ -402,6 +445,11 @@ document.addEventListener('DOMContentLoaded', function() {
           localStorage.setItem('savedUserId', email);
         } else {
           localStorage.removeItem('savedUserId');
+        }
+        if (savePwCheckbox && savePwCheckbox.checked) {
+          try { const key = await getCryptoKey(); const enc = await encryptPw(key, password); localStorage.setItem('savedUserPw', enc); } catch(_) {}
+        } else {
+          localStorage.removeItem('savedUserPw');
         }
         goTo('main.html');
       } catch (err) {
@@ -475,6 +523,10 @@ function switchGrouping(type) {
         categoryList.style.display = 'none';
         regionList.style.display = 'block';
         renderInstitutionsByRegion();
+    } else if (type === 'regionAll') {
+        categoryList.style.display = 'none';
+        regionList.style.display = 'none';
+        renderInstitutionsRegionAll();
     }
 }
 
@@ -694,6 +746,8 @@ function getInstitutionCategory(institutionId) {
 let map = null;
 let markers = [];
 let isMapView = false;
+let markerClusterer = null;
+const geocodeCache = new Map(); // address -> {lat, lng}
 
 // 지도 뷰 토글
 function toggleMapView() {
@@ -720,85 +774,114 @@ function toggleMapView() {
 
 // 지도 초기화
 function initializeMap() {
-    if (map) return; // 이미 초기화된 경우
-    
-    const mapContainer = document.getElementById('seoul-map');
-    const options = {
-        center: new kakao.maps.LatLng(37.5665, 126.9780), // 서울시청
-        level: 8
-    };
-    
-    map = new kakao.maps.Map(mapContainer, options);
+	if (map) return; // 이미 초기화된 경우
+	
+	const mapContainer = document.getElementById('seoul-map');
+	const options = {
+		center: new kakao.maps.LatLng(37.5665, 126.9780), // 서울시청
+		level: 8
+	};
+	
+	map = new kakao.maps.Map(mapContainer, options);
 }
 
 // 지도에 기관들 표시
 function showInstitutionsOnMap() {
-    if (!map) return;
-    
-    // 기존 마커들 제거
-    markers.forEach(marker => marker.setMap(null));
-    markers = [];
-    
-    // 현재 선택된 지역의 기관들만 표시
-    const currentGrouping = document.querySelector('.grouping-btn.active').id;
-    
-    let institutionsToShow = [];
-    
-    if (currentGrouping === 'category-grouping') {
-        // 카테고리별 보기인 경우 모든 기관 표시
-        Object.values(institutionsData).forEach(institutions => {
-            institutionsToShow = institutionsToShow.concat(institutions);
-        });
-    } else if (currentGrouping === 'region-grouping') {
-        // 지역별 보기인 경우 현재 선택된 지역의 기관들만 표시
-        const activeRegion = document.querySelector('#institutions-region-list li.active span').textContent;
-        Object.entries(institutionsData).forEach(([category, institutions]) => {
-            institutions.forEach(institution => {
-                const region = extractRegionFromAddress(institution.address);
-                if (region === activeRegion) {
-                    institutionsToShow.push(institution);
-                }
-            });
-        });
-    }
-    
-    // 주소를 좌표로 변환하여 마커 표시
-    institutionsToShow.forEach(institution => {
-        if (institution.address) {
-            const geocoder = new kakao.maps.services.Geocoder();
-            geocoder.addressSearch(institution.address, function(result, status) {
-                if (status === kakao.maps.services.Status.OK) {
-                    const coords = new kakao.maps.LatLng(result[0].y, result[0].x);
-                    
-                    // 마커 생성
-                    const marker = new kakao.maps.Marker({
-                        position: coords,
-                        map: map
-                    });
-                    
-                    // 인포윈도우 생성
-                    const infowindow = new kakao.maps.InfoWindow({
-                        content: `
-                            <div style="padding: 10px; min-width: 200px;">
-                                <h4 style="margin: 0 0 5px 0; font-size: 14px;">${institution.name || '기관명 없음'}</h4>
-                                <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${institution.address || '주소 없음'}</p>
-                                <button onclick="openInstitutionContacts('${institution.id}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 11px;">
-                                    연락처 보기
-                                </button>
-                            </div>
-                        `
-                    });
-                    
-                    // 마커 클릭 시 인포윈도우 표시
-                    kakao.maps.event.addListener(marker, 'click', function() {
-                        infowindow.open(map, marker);
-                    });
-                    
-                    markers.push(marker);
-                }
-            });
-        }
-    });
+	if (!map) return;
+	
+	// 기존 마커들 제거
+	markers.forEach(marker => marker.setMap(null));
+	markers = [];
+	
+	// 현재 선택된 지역의 기관들만 표시
+	const currentGrouping = document.querySelector('.grouping-btn.active').id;
+	
+	let institutionsToShow = [];
+	
+	if (currentGrouping === 'category-grouping') {
+		Object.values(institutionsData).forEach(institutions => {
+			institutionsToShow = institutionsToShow.concat(institutions);
+		});
+	} else if (currentGrouping === 'region-grouping') {
+		const activeRegion = document.querySelector('#institutions-region-list li.active span').textContent;
+		Object.entries(institutionsData).forEach(([category, institutions]) => {
+			institutions.forEach(institution => {
+				const region = extractRegionFromAddress(institution.address);
+				if (region === activeRegion) {
+					institutionsToShow.push(institution);
+				}
+			});
+		});
+	} else if (currentGrouping === 'region-all-grouping') {
+		Object.values(institutionsData).forEach(list => {
+			institutionsToShow = institutionsToShow.concat(list);
+		});
+	}
+	
+	// 주소를 좌표로 변환하여 마커 표시 (Kakao Geocoder)
+	const geocoder = new kakao.maps.services.Geocoder();
+	const bounds = new kakao.maps.LatLngBounds();
+	const newMarkers = [];
+	
+	const addMarker = (institution, lat, lng) => {
+		const coords = new kakao.maps.LatLng(lat, lng);
+		const marker = new kakao.maps.Marker({ position: coords });
+		const infowindow = new kakao.maps.InfoWindow({
+			content: `
+				<div style="padding: 10px; min-width: 200px;">
+					<h4 style="margin: 0 0 5px 0; font-size: 14px;">${institution.name || '기관명 없음'}</h4>
+					<p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${institution.address || '주소 없음'}</p>
+					<button onclick="openInstitutionContacts('${institution.id}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 11px;">
+						연락처 보기
+					</button>
+				</div>`
+		});
+		kakao.maps.event.addListener(marker, 'click', function() { infowindow.open(map, marker); });
+		newMarkers.push(marker);
+		bounds.extend(coords);
+	};
+	
+	const tasks = institutionsToShow.map(inst => {
+		return new Promise((resolve) => {
+			if (!inst.address) return resolve();
+			const cached = geocodeCache.get(inst.address);
+			if (cached) {
+				addMarker(inst, cached.lat, cached.lng);
+				return resolve();
+			}
+			geocoder.addressSearch(inst.address, function(result, status) {
+				if (status === kakao.maps.services.Status.OK) {
+					const lat = Number(result[0].y);
+					const lng = Number(result[0].x);
+					geocodeCache.set(inst.address, { lat, lng });
+					addMarker(inst, lat, lng);
+				}
+				resolve();
+			});
+		});
+	});
+	
+	Promise.all(tasks).then(() => {
+		// 기존 단일 마커 제거
+		markers.forEach(m => m.setMap(null));
+		markers = newMarkers;
+		
+		// 클러스터러 초기화/갱신
+		if (!markerClusterer) {
+			markerClusterer = new kakao.maps.MarkerClusterer({
+				map: map,
+				averageCenter: true,
+				minLevel: 7
+			});
+		}
+		markerClusterer.clear();
+		markerClusterer.addMarkers(markers);
+		
+		// 마커가 있으면 지도 범위 맞춤
+		if (!bounds.isEmpty()) {
+			map.setBounds(bounds);
+		}
+	});
 }
 
 // 지역별 보기에서 지역 변경 시 지도 업데이트
@@ -944,6 +1027,21 @@ function copyAllEmails(category) {
     });
 }
 
+// GP suggestions cache
+let __gpSuggestionsCache = null;
+function getGpSuggestionsCached() {
+  try {
+    if (Array.isArray(__gpSuggestionsCache)) return __gpSuggestionsCache;
+    const names = Object.values(gpsData || {})
+      .flat()
+      .map(g => g && g.name ? String(g.name) : '')
+      .filter(Boolean);
+    __gpSuggestionsCache = Array.from(new Set(names)).sort((a,b)=>a.localeCompare(b,'en',{ignoreCase:true}));
+    return __gpSuggestionsCache;
+  } catch (_) { return []; }
+}
+function invalidateGpSuggestionsCache() { __gpSuggestionsCache = null; }
+
 // 테이블 렌더링
 function renderTable() {
     const tbody = document.getElementById(`${currentTab}-tbody`);
@@ -976,7 +1074,6 @@ function renderTable() {
     let rowNumber = 1;
     let html = '';
 
-    // 정렬 없이 원래 입력 순서를 유지하여, 새 행은 항상 마지막에 추가되도록 함
     data.forEach(row => {
         html += `
             <tr data-row-id="${row.id}">
@@ -985,7 +1082,6 @@ function renderTable() {
                     <input type="text" 
                            value="${row.institution || ''}" 
                            placeholder="기관명 입력"
-                           onchange="updateTableData('${currentTab}', '${row.id}', 'institution', this.value)"
                            data-row-id="${row.id}">
                 </td>
                 <td>
@@ -1021,26 +1117,33 @@ function renderTable() {
     
     tbody.innerHTML = html;
     
-    // 자동완성 기능 적용
-    setTimeout(() => {
-        const institutionInputs = tbody.querySelectorAll('input[placeholder="기관명 입력"]');
-        const suggestions = getGpSuggestions();
-        
-        institutionInputs.forEach(input => {
+    // 기관명 입력: 포커스 시 1회 자동완성 초기화(지연 로딩)
+    const institutionInputs = tbody.querySelectorAll('input[placeholder="기관명 입력"]');
+    const suggestions = getGpSuggestionsCached();
+    institutionInputs.forEach(input => {
+        input.addEventListener('focus', () => {
+            if (input._acInited) return;
+            input._acInited = true;
             createAutocompleteInput(input, suggestions, (selectedValue) => {
                 const rowId = input.getAttribute('data-row-id');
                 updateTableData(currentTab, rowId, 'institution', selectedValue);
             });
+        }, { once: true });
+        input.addEventListener('change', () => {
+            const rowId = input.getAttribute('data-row-id');
+            updateTableData(currentTab, rowId, 'institution', input.value);
         });
-        
-        // 리사이즈 기능 재초기화
+    });
+    
+    // 리사이즈 기능 재초기화 (rAF로 프레임 단위 배치)
+    requestAnimationFrame(() => {
         const table = document.getElementById(`${currentTab}-table`);
         if (table) {
             initializeColumnResize();
             restoreColumnWidths(table);
         }
         scheduleAutoFitDashboard();
-    }, 100);
+    });
 }
 
 // 같은 기관에 행 추가
@@ -1932,6 +2035,13 @@ function deleteInstitution(category, institutionId) {
 }
 
 function renderInstitutionsDashboard() {
+    // 렌더 직전 선택/전체 중복 제거 및 저장
+    try {
+        const changedAll = dedupeInstitutionsData(false);
+        const cats = Object.keys(institutionsData||{});
+        cats.forEach(c => dedupeInstitutionsCategory(c, false));
+        if (changedAll) { try { saveDataToLocalStorage(); } catch(_) {} try { syncDataToServer(); } catch(_) {} }
+    } catch(_) {}
     const sidebar = document.getElementById('institutions-category-list');
     const detailTitle = document.getElementById('institutions-detail-title');
     const detailTbody = document.getElementById('institutions-detail-tbody');
@@ -2751,6 +2861,8 @@ function loadDataFromLocalStorage() {
 // 실시간 동기화 초기화
 function initializeRealTimeSync() {
 	// Firebase 실시간 리스너 설정
+	if (window.__rtdbSyncInited) return;
+	window.__rtdbSyncInited = true;
 	if (database) {
 		database.ref('/').on('value', (snapshot) => {
 			const data = snapshot.val();
@@ -2769,19 +2881,19 @@ function initializeRealTimeSync() {
 				// 삭제된 항목들 필터링
 				const filteredTableData = filterDeletedItems(data.tableData, 'tableData');
 				tableData = filteredTableData;
-				renderTable();
+				renderIfActive('contacts-dashboard', renderTable);
 				changed = true;
 			}
 			if (data.rfpData && JSON.stringify(data.rfpData) !== JSON.stringify(rfpData)) {
 				// 삭제된 항목들 필터링
 				rfpData = filterDeletedItems(data.rfpData, 'rfpData');
-				renderRfpTable();
+				renderIfActive('rfp-dashboard', renderRfpTable);
 				changed = true;
 			}
 			if (data.institutionsData && JSON.stringify(data.institutionsData) !== JSON.stringify(institutionsData)) {
 				// 삭제된 항목들 필터링
 				institutionsData = filterDeletedItems(data.institutionsData, 'institutionsData');
-				renderInstitutionsDashboard();
+				renderIfActive('institutions-dashboard', renderInstitutionsDashboard);
 				changed = true;
 			}
 			if (data.gpsData && JSON.stringify(data.gpsData) !== JSON.stringify(gpsData)) {
@@ -2789,7 +2901,7 @@ function initializeRealTimeSync() {
 				gpsData = filterDeletedItems(data.gpsData, 'gpsData');
 				// 동기화 데이터에도 전략 정규화 적용
 				normalizeGpStrategies();
-				renderGpsDashboard();
+				renderIfActive('gps-dashboard', renderGpsDashboard);
 				changed = true;
 			}
 			// contacts: 빈 맵으로 덮어쓰지 않도록 가드
@@ -2821,7 +2933,7 @@ function initializeRealTimeSync() {
 			}
 			if (data.roadshowData && JSON.stringify(data.roadshowData) !== JSON.stringify(roadshowData)) {
 				roadshowData = data.roadshowData;
-				renderRoadshow();
+				renderIfActive('roadshow-dashboard', renderRoadshow);
 				changed = true;
 			}
 			if (changed) updateConnectionStatus(true);
@@ -2845,6 +2957,8 @@ function initializeRealTimeSync() {
 // Firestore 실시간 리스너(읽기 경로 예시)
 function initializeFirestoreSync() {
     try {
+        if (window.__firestoreSyncInited) return;
+        window.__firestoreSyncInited = true;
         if (!db && firebase && firebase.firestore) db = firebase.firestore();
         const user = firebase.auth && firebase.auth().currentUser;
         if (!db) return;
@@ -2885,7 +2999,7 @@ function initializeFirestoreSync() {
                     });
                     if (Object.keys(byCat).length) {
                         institutionsData = byCat;
-                        renderInstitutionsDashboard();
+                        renderIfActive('institutions-dashboard', renderInstitutionsDashboard);
                     }
                     const byLetter = {};
                     gpArr.forEach(it => {
@@ -2895,7 +3009,7 @@ function initializeFirestoreSync() {
                     if (Object.keys(byLetter).length) {
                         gpsData = byLetter;
                         normalizeGpStrategies();
-                        renderGpsDashboard();
+                        renderIfActive('gps-dashboard', renderGpsDashboard);
                     }
                     // contacts 병합 + 별칭 키 구성
                     const map = {};
@@ -2937,7 +3051,7 @@ function initializeFirestoreSync() {
                 });
                 if (JSON.stringify(arr) !== JSON.stringify(rfpData)) {
                     rfpData = arr;
-                    renderRfpTable();
+                    renderIfActive('rfp-dashboard', renderRfpTable);
                 }
             });
             // institutions
@@ -2954,7 +3068,7 @@ function initializeFirestoreSync() {
                 });
                 if (JSON.stringify(byCat) !== JSON.stringify(institutionsData)) {
                     institutionsData = byCat;
-                    renderInstitutionsDashboard();
+                    renderIfActive('institutions-dashboard', renderInstitutionsDashboard);
                 }
             });
             // gps
@@ -2974,7 +3088,7 @@ function initializeFirestoreSync() {
                 gpsData = byLetter;
                 normalizeGpStrategies();
                 if (JSON.stringify(gpsData) !== prev) {
-                    renderGpsDashboard();
+                    renderIfActive('gps-dashboard', renderGpsDashboard);
                 }
             });
             // tableData
@@ -2990,7 +3104,7 @@ function initializeFirestoreSync() {
                 });
                 if (JSON.stringify(byTab) !== JSON.stringify(tableData)) {
                     tableData = byTab;
-                    renderTable();
+                    renderIfActive('contacts-dashboard', renderTable);
                 }
             });
             // contacts
@@ -3061,7 +3175,7 @@ function initializeFirestoreSync() {
 function syncDataToServer() {
     // 디바운스/스로틀: 짧은 지연 후 1회만 실제 동기화 수행
     if (!syncDataToServer.__debounce) {
-        syncDataToServer.__debounce = { timer: null, runNow: false, interval: 350 };
+        syncDataToServer.__debounce = { timer: null, runNow: false, interval: 700 };
     }
     const info = syncDataToServer.__debounce;
     if (!info.runNow) {
@@ -3171,25 +3285,25 @@ function syncDataFromServer() {
                 if (data) {
                     // 로컬 데이터와 비교하여 업데이트
                     if (data.tableData && JSON.stringify(data.tableData) !== JSON.stringify(tableData)) {
-                        tableData = data.tableData;
-                        renderTable();
+                        tableData = filterDeletedItems(data.tableData, 'tableData');
+                        renderIfActive('contacts-dashboard', renderTable);
                     }
                     
                     if (data.rfpData && JSON.stringify(data.rfpData) !== JSON.stringify(rfpData)) {
-                        rfpData = data.rfpData;
-                        renderRfpTable();
+                        rfpData = filterDeletedItems(data.rfpData, 'rfpData');
+                        renderIfActive('rfp-dashboard', renderRfpTable);
                     }
                     
                     if (data.institutionsData && JSON.stringify(data.institutionsData) !== JSON.stringify(institutionsData)) {
-                        institutionsData = data.institutionsData;
-                        renderInstitutionsDashboard();
+                        institutionsData = filterDeletedItems(data.institutionsData, 'institutionsData');
+                        renderIfActive('institutions-dashboard', renderInstitutionsDashboard);
                     }
                     
                     if (data.gpsData && JSON.stringify(data.gpsData) !== JSON.stringify(gpsData)) {
-                        gpsData = data.gpsData;
+                        gpsData = filterDeletedItems(data.gpsData, 'gpsData');
                         // 동기화 데이터에도 전략 정규화 적용
                         normalizeGpStrategies();
-                        renderGpsDashboard();
+                        renderIfActive('gps-dashboard', renderGpsDashboard);
                     }
                     const countMap = (m) => {
                         try { return Object.values(m || {}).reduce((a, l) => a + (Array.isArray(l) ? l.length : 0), 0); } catch (_) { return 0; }
@@ -3211,7 +3325,7 @@ function syncDataFromServer() {
                     
                     if (data.roadshowData && JSON.stringify(data.roadshowData) !== JSON.stringify(roadshowData)) {
                         roadshowData = data.roadshowData;
-                        renderRoadshow();
+                        renderIfActive('roadshow-dashboard', renderRoadshow);
                     }
                     
                     console.log('Firebase에서 데이터를 가져왔습니다.');
@@ -3565,10 +3679,12 @@ function ensureInstitutionCategory(category) {
 function addInstitutionIfMissing(category, name) {
     if (!category || !name || name === '기타') return false;
     ensureInstitutionCategory(category);
-    const exists = institutionsData[category].some(inst => inst.name === name);
+    const norm = normalizeInstitutionName(name);
+    // 전 카테고리 중복 방지
+    const exists = Object.values(institutionsData || {}).some(lst => (lst||[]).some(inst => normalizeInstitutionName(inst.name) === norm));
     if (!exists) {
-      institutionsData[category].push({ id: generateId(), name });
-      return true;
+        institutionsData[category].push({ id: generateId(), name });
+        return true;
     }
     return false;
 }
@@ -3686,7 +3802,7 @@ function renderInstitutionContacts(institutionId, displayName = '') {
 	if (total === 0) {
 		tbody.innerHTML = `
 			<tr>
-				<td colspan="8" class="empty-table">
+				<td colspan="6" class="empty-table">
 					<i class="fas fa-address-book"></i>
 					<h3>등록된 Contact가 없습니다</h3>
 					<p>오른쪽 상단의 연락처 추가 버튼을 눌러 등록하세요.</p>
@@ -3715,8 +3831,6 @@ function renderInstitutionContacts(institutionId, displayName = '') {
 					<button class="table-action-btn" title="이메일 복사" onclick="copyContactEmail('${institutionId}','${contact.id}')"><i class="fas fa-copy"></i></button>
 				</div>
 			</td>
-			<td><input type="text" value="${contact.office || ''}" placeholder="내선번호" onchange="updateInstitutionContact('${institutionId}','${contact.id}','office', this.value)"></td>
-			<td><input type="text" value="${contact.mobile || ''}" placeholder="핸드폰" onchange="updateInstitutionContact('${institutionId}','${contact.id}','mobile', this.value)"></td>
 			<td class="action-col">
 				<div class="table-actions">
 					<button class="table-action-btn delete" onclick="deleteInstitutionContact('${institutionId}','${contact.id}')" title="삭제">
@@ -4263,48 +4377,41 @@ function closeAllOpenPopups() {
 }
 
 function renderRoadshow() {
-    // 헤더(day columns)와 바디(8:00~24:00, 30분 단위)를 렌더링
+    // days가 비어 있으면 기본 날짜 1개 자동 생성
+    (function ensureDefaultRoadshowDay(){
+        try {
+            roadshowData.days = roadshowData.days || [];
+            if (roadshowData.days.length === 0) {
+                const now = new Date();
+                const label = now.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+                const id = 'day_' + Date.now();
+                roadshowData.days.push({ id, label });
+                saveDataToLocalStorage();
+            }
+        } catch (_) {}
+    })();
+    // 헤더 (sticky time column + dynamic day columns)
+    const timeHeader = `<th class="time-col">&nbsp;</th>`;
+    const dayHeaders = roadshowData.days.slice(0, rsExtraCols).map(d => `<th class="day-col" data-day-id="${d.id}">${escapeHtml(d.label || d.id)}</th>`).join('');
     const head = document.getElementById('roadshow-grid-head');
-    const body = document.getElementById('roadshow-grid-body');
-    const invBody = document.getElementById('roadshow-investor-tbody');
-    const fundList = document.getElementById('roadshow-fund-list');
-    if (!head || !body || !invBody) return;
-
-    const days = roadshowData.days || [];
-
-    // 좌측 펀드 목록
-    if (fundList) {
-        const funds = roadshowData.funds || [];
-        if (!selectedFundId && funds[0]) selectedFundId = funds[0].id;
-        fundList.innerHTML = funds.map(f => `
-            <li data-fund-id="${f.id}" class="${selectedFundId===f.id?'active':''}">
-                <input type="text" value="${f.name || ''}" placeholder="펀드명" onchange="updateRoadshowFund('${f.id}', this.value)">
-                <button class="table-action-btn delete" title="삭제" onclick="deleteRoadshowFund('${f.id}')"><i class="fas fa-trash"></i></button>
-            </li>
-        `).join('');
-        // 클릭 시 선택 펀드 변경
-        fundList.querySelectorAll('li').forEach(li => {
-            li.addEventListener('click', (e) => {
-                if ((e.target && e.target.tagName === 'INPUT') || (e.target && e.target.closest('button'))) return;
-                selectedFundId = li.getAttribute('data-fund-id');
-                renderRoadshow();
-            });
-        });
-    }
-
-    // 헤더
-    head.innerHTML = `<tr>
-        ${days.map(d => `<th class="day-col" data-day-id="${d.id}">${escapeHtml(d.label || d.id)}</th>`).join('')}
-    </tr>`;
+    head.innerHTML = `<tr>${timeHeader}${dayHeaders}</tr>`;
 
     // 타임 슬롯 생성
     const times = buildHalfHourTimes();
+    const body = document.getElementById('roadshow-grid-body');
     body.innerHTML = times.map(t => {
-        const rowCells = days.map(d => `<td class=\"slot\" data-day-id=\"${d.id}\" data-time=\"${t}\">${renderMeetingAt(d.id, t)}</td>`).join('');
-        return `<tr>${rowCells}</tr>`;
+        const tcol = `<td class=\"time-col\">${t}</td>`;
+        const rowCells = roadshowData.days.slice(0, rsExtraCols).map(d => `<td class=\"slot\" data-day-id=\"${d.id}\" data-time=\"${t}\">${renderMeetingAt(d.id, t)}</td>`).join('');
+        return `<tr>${tcol}${rowCells}</tr>`;
     }).join('');
 
     // Investor 표 렌더링
+    const invBody = document.getElementById('roadshow-investor-tbody');
+    const fundList = document.getElementById('roadshow-fund-list');
+    const miniDaySelect = document.getElementById('mini-day-select');
+    const miniGrid = document.getElementById('roadshow-mini-grid');
+    if (!invBody || !fundList || !miniDaySelect || !miniGrid) return;
+
     const investors = (roadshowData.investors || []).filter(inv => (inv.fundId || null) === (selectedFundId || null));
     invBody.innerHTML = investors.map((inv, idx) => `
         <tr data-rs-investor-id="${inv.id}">
@@ -4324,6 +4431,9 @@ function renderRoadshow() {
 
     // 슬롯 클릭 및 드래그 선택 핸들러
     attachRoadshowSlotEvents();
+
+    // 자동 너비 조정: 가용 폭에서 동일 분배
+    autoFitRoadshowColumns();
 
     // datalist 업데이트
     updateRoadshowDatalists();
@@ -4540,10 +4650,9 @@ function nextHalfHour(t) { const m=timeToMinutes(t)+30; const h=Math.floor(m/60)
 
 function buildHalfHourTimes() {
     const res = [];
-    for (let h = 8; h <= 23; h++) {
+    for (let h = 9; h <= 17; h++) {
         ['00','30'].forEach(m => res.push(`${String(h).padStart(2,'0')}:${m}`));
     }
-    // 24:00 끝 표시용으로 추가 슬롯 머리표시는 하지 않음
     return res;
 }
 
@@ -4568,12 +4677,20 @@ function addRoadshowDay() {
 }
 
 function addRoadshowInvestor() {
-    const name = prompt('Investor 이름을 입력하세요:');
-    if (!name || !name.trim()) return;
     const id = 'inv_' + Date.now();
-    roadshowData.investors.push({ id, fundId: selectedFundId || null, investor: name.trim(), type: '', address: '', lpAttendees: '', kbSecurities: '' });
+    roadshowData.investors = roadshowData.investors || [];
+    roadshowData.investors.push({ id, fundId: selectedFundId || null, investor: '', type: '', address: '', lpAttendees: '', kbSecurities: '' });
     saveDataToLocalStorage();
+    // 빠르게 한 행만 다시 그리기보다는 일관성을 위해 전체 렌더
     renderRoadshow();
+    // 렌더 후 방금 추가한 행의 첫 입력에 포커스
+    setTimeout(() => {
+        const row = document.querySelector(`[data-rs-investor-id="${id}"]`);
+        if (row) {
+            const firstInput = row.querySelector('input');
+            if (firstInput) firstInput.focus();
+        }
+    }, 0);
 }
 
 function updateRoadshowInvestor(id, field, value) {
@@ -4585,8 +4702,8 @@ function updateRoadshowInvestor(id, field, value) {
 
 function deleteRoadshowInvestor(id) {
     if (!confirm('이 Investor를 삭제할까요?')) return;
-    // 즉시 UI에서 제거
-    const row = document.querySelector(`[data-investor-id="${id}"]`);
+    // 즉시 UI에서 제거 (올바른 선택자)
+    const row = document.querySelector(`[data-rs-investor-id="${id}"]`);
     if (row) {
         row.remove();
     }
@@ -4596,10 +4713,12 @@ function deleteRoadshowInvestor(id) {
     saveDeletedItems();
     updateDeletedItemsCount();
     
+    // 데이터에서 제거 후 저장
     roadshowData.investors = (roadshowData.investors || []).filter(i => i.id !== id);
     saveDataToLocalStorage();
     
-    // 즉시 서버 동기화
+    // UI 재렌더 및 즉시 서버 동기화
+    renderRoadshow();
     syncDataToServer();
 }
 
@@ -5058,3 +5177,204 @@ async function autoNormalizeContactsDaily() {
     _save();
   };
 })();
+
+// 지역별(전체) 그룹 묶음 렌더
+function renderInstitutionsRegionAll() {
+    const detailTitle = document.getElementById('institutions-detail-title');
+    const detailTbody = document.getElementById('institutions-detail-tbody');
+    if (!detailTitle || !detailTbody) return;
+
+    detailTitle.textContent = '지역별 (전체)';
+    
+    // 지역 그룹 구성
+    const regionGroups = {};
+    Object.values(institutionsData).forEach(list => {
+        list.forEach(inst => {
+            const region = extractRegionFromAddress(inst.address);
+            if (!regionGroups[region]) regionGroups[region] = [];
+            regionGroups[region].push(inst);
+        });
+    });
+
+    const regions = Object.keys(regionGroups).sort();
+    const rows = [];
+
+    regions.forEach(region => {
+        // 섹션 헤더 행
+        rows.push(`
+            <tr class="region-group-row"><td colspan="6"><div class="region-group-title">${region} <span class="count">${regionGroups[region].length}</span></div></td></tr>
+        `);
+        // 항목 행들
+        regionGroups[region].forEach(inst => {
+            rows.push(`
+                <tr data-institution-id="${inst.id}">
+                    <td>${inst.name || ''}</td>
+                    <td>${inst.fullName || ''}</td>
+                    <td>${inst.abbreviation || ''}</td>
+                    <td>${inst.address || ''}</td>
+                    <td>
+                        <button class="contact-open-btn" onclick="openInstitutionContacts('${inst.id}')" title="연락처 보기">
+                            <i class="fas fa-address-book"></i>
+                        </button>
+                    </td>
+                    <td class="action-col">
+                        <div class="table-actions">
+                            <button class="table-action-btn edit" onclick="editInstitution('${inst.id}')" title="수정">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="table-action-btn delete" onclick="deleteInstitution('${getInstitutionCategory(inst.id)}','${inst.id}')" title="삭제">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `);
+        });
+    });
+
+    // 렌더
+    detailTbody.innerHTML = rows.join('');
+
+    // 지도 뷰면 지도 갱신
+    if (isMapView) {
+        showInstitutionsOnMap();
+    }
+}
+
+function renderMiniGrid() {
+    const miniGrid = document.getElementById('roadshow-mini-grid');
+    const miniDaySelect = document.getElementById('mini-day-select');
+    if (!miniGrid || !miniDaySelect) return;
+    const dayId = window.__miniSelectedDayId || (miniDaySelect.value || '');
+    if (!dayId) { miniGrid.innerHTML = '<div style="font-size:0.9rem;color:#6b7280;">날짜를 먼저 추가하세요.</div>'; return; }
+    const times = buildHalfHourTimes();
+    miniGrid.innerHTML = times.map(t => `<div class="mini-slot" data-time="${t}">${t}</div>`).join('');
+    attachMiniGridEvents(dayId);
+}
+
+function attachMiniGridEvents(dayId) {
+    const miniGrid = document.getElementById('roadshow-mini-grid');
+    if (!miniGrid) return;
+    let dragging = false;
+    let startTime = null;
+    let endTime = null;
+    const clearSelecting = () => miniGrid.querySelectorAll('.mini-slot').forEach(el => el.classList.remove('slot-selecting'));
+    const markRange = (a,b) => {
+        const [s,e] = orderTimes(a,b);
+        miniGrid.querySelectorAll('.mini-slot').forEach(el => {
+            const t = el.getAttribute('data-time');
+            if (timeGte(t, s) && timeLte(t, e)) el.classList.add('slot-selecting');
+        });
+    };
+    miniGrid.querySelectorAll('.mini-slot').forEach(div => {
+        div.addEventListener('mousedown', (e) => {
+            dragging = true;
+            startTime = div.getAttribute('data-time');
+            endTime = startTime;
+            clearSelecting();
+            div.classList.add('slot-selecting');
+            e.preventDefault();
+        });
+        div.addEventListener('mouseenter', () => {
+            if (!dragging) return;
+            endTime = div.getAttribute('data-time');
+            clearSelecting();
+            markRange(startTime, endTime);
+        });
+        div.addEventListener('click', (e) => {
+            if (dragging) return;
+            const start = div.getAttribute('data-time');
+            openRoadshowMeetingModal({ dayId, start });
+        });
+    });
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        const [a,b] = orderTimes(startTime, endTime);
+        clearSelecting();
+        openRoadshowMeetingModal({ dayId, start: a, end: nextHalfHour(b) });
+    }, { once: true });
+}
+
+// Roadshow grid dynamic columns (excluding sticky time column)
+let rsExtraCols = 3; // default number of day columns shown besides time column
+function addRoadshowColumn() {
+    rsExtraCols += 1;
+    renderRoadshow();
+}
+function removeRoadshowColumn() {
+    rsExtraCols = Math.max(1, rsExtraCols - 1);
+    renderRoadshow();
+}
+
+function autoFitRoadshowColumns() {
+    try {
+        const table = document.getElementById('roadshow-grid-table');
+        if (!table) return;
+        const container = table.parentElement; // .roadshow-grid
+        const totalWidth = container.clientWidth;
+        const timeWidth = 90; // sticky time col width
+        const cols = rsExtraCols;
+        const each = Math.max(140, Math.floor((totalWidth - timeWidth) / cols));
+        const ths = table.querySelectorAll('th');
+        ths.forEach((th, idx) => {
+            if (idx === 0) { th.style.width = timeWidth + 'px'; }
+            else { th.style.width = each + 'px'; }
+        });
+        const rows = table.querySelectorAll('tr');
+        rows.forEach(tr => {
+            tr.querySelectorAll('td').forEach((td, idx) => {
+                if (idx === 0) td.style.width = timeWidth + 'px';
+                else td.style.width = each + 'px';
+            });
+        });
+    } catch (_) {}
+}
+
+window.addEventListener('resize', () => { try { autoFitRoadshowColumns(); } catch(_){} });
+
+// ----- Institutions: global dedup helpers -----
+function normalizeInstitutionName(name) {
+    return String(name || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+}
+
+function dedupeInstitutionsData(persist=false) {
+    try {
+        const before = JSON.stringify(institutionsData || {});
+        const seen = new Map(); // key -> {cat, idx}
+        Object.keys(institutionsData || {}).forEach(cat => {
+            const list = Array.isArray(institutionsData[cat]) ? institutionsData[cat] : [];
+            const filtered = [];
+            list.forEach(item => {
+                const key = normalizeInstitutionName(item && item.name);
+                if (!key) { filtered.push(item); return; }
+                if (!seen.has(key)) {
+                    seen.set(key, { cat, id: item.id });
+                    filtered.push(item);
+                } else {
+                    // merge minimal fields if primary lacks them
+                    const primaryRef = seen.get(key);
+                    const primaryList = institutionsData[primaryRef.cat] || [];
+                    const primary = primaryList.find(x => x.id === primaryRef.id);
+                    if (primary) {
+                        ['englishFullName','abbreviation','addressKorean','addressEnglish'].forEach(f => {
+                            if (!primary[f] && item && item[f]) primary[f] = item[f];
+                        });
+                    }
+                }
+            });
+            institutionsData[cat] = filtered;
+        });
+        const after = JSON.stringify(institutionsData || {});
+        const changed = before !== after;
+        if (changed && persist) {
+            try { saveDataToLocalStorage(); } catch(_) {}
+            try { syncDataToServer(); } catch(_) {}
+        }
+        return changed;
+    } catch (e) { /* no-op */ }
+    return false;
+}
