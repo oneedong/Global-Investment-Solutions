@@ -1,0 +1,27 @@
+{
+  "name": "KB Global Investment Solutions",
+  "short_name": "KB GIS",
+  "description": "Global Investment Solutions - Mobile App",
+  "lang": "ko-KR",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#0e1524",
+  "theme_color": "#0e1524",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "symbol_transparent.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "symbol_transparent.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

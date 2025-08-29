@@ -2885,10 +2885,19 @@ function initializeRealTimeSync() {
 				changed = true;
 			}
 			if (data.rfpData && JSON.stringify(data.rfpData) !== JSON.stringify(rfpData)) {
-				// 삭제된 항목들 필터링
-				rfpData = filterDeletedItems(data.rfpData, 'rfpData');
-				renderIfActive('rfp-dashboard', renderRfpTable);
-				changed = true;
+				// 빈 배열로 로컬 데이터를 덮어쓰는 것을 방지
+				try {
+					const incoming = Array.isArray(data.rfpData) ? data.rfpData : [];
+					const currentLen = Array.isArray(rfpData) ? rfpData.length : 0;
+					const incomingLen = incoming.length;
+					if (currentLen > 0 && incomingLen === 0) {
+						// skip
+					} else {
+						rfpData = filterDeletedItems(incoming, 'rfpData');
+						renderIfActive('rfp-dashboard', renderRfpTable);
+						changed = true;
+					}
+				} catch (_) {}
 			}
 			if (data.institutionsData && JSON.stringify(data.institutionsData) !== JSON.stringify(institutionsData)) {
 				// 삭제된 항목들 필터링
@@ -3290,8 +3299,17 @@ function syncDataFromServer() {
                     }
                     
                     if (data.rfpData && JSON.stringify(data.rfpData) !== JSON.stringify(rfpData)) {
-                        rfpData = filterDeletedItems(data.rfpData, 'rfpData');
-                        renderIfActive('rfp-dashboard', renderRfpTable);
+                        try {
+                            const incoming = Array.isArray(data.rfpData) ? data.rfpData : [];
+                            const currentLen = Array.isArray(rfpData) ? rfpData.length : 0;
+                            const incomingLen = incoming.length;
+                            if (currentLen > 0 && incomingLen === 0) {
+                                // skip 빈 덮어쓰기 방지
+                            } else {
+                                rfpData = filterDeletedItems(incoming, 'rfpData');
+                                renderIfActive('rfp-dashboard', renderRfpTable);
+                            }
+                        } catch (_) {}
                     }
                     
                     if (data.institutionsData && JSON.stringify(data.institutionsData) !== JSON.stringify(institutionsData)) {
@@ -4383,36 +4401,147 @@ function renderRoadshow() {
             roadshowData.days = roadshowData.days || [];
             if (roadshowData.days.length === 0) {
                 const now = new Date();
-                const label = now.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
                 const id = 'day_' + Date.now();
-                roadshowData.days.push({ id, label });
+                roadshowData.days.push({ id, iso: toIsoDate(now), label: formatRoadshowDayLabel(now) });
                 saveDataToLocalStorage();
             }
         } catch (_) {}
     })();
     // 헤더 (sticky time column + dynamic day columns)
     const timeHeader = `<th class="time-col">&nbsp;</th>`;
-    const dayHeaders = roadshowData.days.slice(0, rsExtraCols).map(d => `<th class="day-col" data-day-id="${d.id}">${escapeHtml(d.label || d.id)}</th>`).join('');
+    const visibleCount = Math.max(1, (roadshowData.days || []).length);
+    const dayHeaders = roadshowData.days.slice(0, visibleCount).map((d, i) => {
+        const unified = formatRoadshowDayLabel(coerceDayDate(d));
+        d.label = unified; // 저장 시 영문 축약형으로 통일
+        return `
+        <th class=\"day-col\" data-day-id=\"${d.id}\" data-day-index=\"${i}\">\n            <span class=\"add-day-handle left\" data-direction=\"prev\" data-base-index=\"${i}\" title=\"왼쪽에 날짜 추가 (Workday T-1)\">+</span>\n            ${escapeHtml(unified)}\n            <span class=\"add-day-handle right\" data-direction=\"next\" data-base-index=\"${i}\" title=\"오른쪽에 날짜 추가 (Workday T+1)\">+</span>\n        </th>`;
+    }).join('');
     const head = document.getElementById('roadshow-grid-head');
     head.innerHTML = `<tr>${timeHeader}${dayHeaders}</tr>`;
+    try {
+        head.querySelectorAll('.add-day-handle').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const baseIdx = parseInt(btn.getAttribute('data-base-index') || '0', 10);
+                const dir = btn.getAttribute('data-direction') === 'prev' ? 'prev' : 'next';
+                insertRoadshowWorkday(baseIdx, dir);
+            });
+        });
+        head.addEventListener('mousedown', (e) => {
+            const t = e.target;
+            if (t && t.classList && t.classList.contains('add-day-handle')) {
+                e.preventDefault();
+            }
+        }, true);
+        // 헤더 우클릭 → 열 삭제
+        head.querySelectorAll('th.day-col').forEach((th, idx) => {
+            th.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                const at = parseInt(th.getAttribute('data-day-index') || String(idx), 10);
+                deleteRoadshowDayAt(at);
+            });
+        });
+    } catch (_) {}
 
     // 타임 슬롯 생성
     const times = buildHalfHourTimes();
     const body = document.getElementById('roadshow-grid-body');
     body.innerHTML = times.map(t => {
         const tcol = `<td class=\"time-col\">${t}</td>`;
-        const rowCells = roadshowData.days.slice(0, rsExtraCols).map(d => `<td class=\"slot\" data-day-id=\"${d.id}\" data-time=\"${t}\">${renderMeetingAt(d.id, t)}</td>`).join('');
+        const rowCells = roadshowData.days.slice(0, visibleCount).map(d => {
+            return renderGridCell(d.id, t);
+        }).join('');
         return `<tr>${tcol}${rowCells}</tr>`;
     }).join('');
 
-    // Investor 표 렌더링
+    // Investor 표 렌더링 + 펀드 목록 렌더링
     const invBody = document.getElementById('roadshow-investor-tbody');
     const fundList = document.getElementById('roadshow-fund-list');
-    const miniDaySelect = document.getElementById('mini-day-select');
-    const miniGrid = document.getElementById('roadshow-mini-grid');
-    if (!invBody || !fundList || !miniDaySelect || !miniGrid) return;
+    if (!invBody || !fundList) return;
 
-    const investors = (roadshowData.investors || []).filter(inv => (inv.fundId || null) === (selectedFundId || null));
+    // 펀드 기본 선택 보장
+    const funds = roadshowData.funds || [];
+    if (!window.selectedFundId || !funds.some(f => f.id === window.selectedFundId)) {
+        window.selectedFundId = funds[0] ? funds[0].id : null;
+    }
+
+    // 펀드 목록 렌더
+    fundList.innerHTML = (funds || []).map(f => `
+        <li data-fund-id="${f.id}" class="${f.id === window.selectedFundId ? 'active' : ''}" draggable="true">
+            <span class="fund-handle" title="순서 변경"><i class="fas fa-grip-vertical"></i></span>
+            <input type="text" value="${escapeHtml(f.name || '')}" onchange="updateRoadshowFund('${f.id}', this.value)">
+            <button class="fund-delete" title="삭제" onclick="event.stopPropagation(); deleteRoadshowFund('${f.id}')"><i class="fas fa-trash"></i></button>
+        </li>
+    `).join('');
+    // 선택/더블클릭 편집
+    Array.from(fundList.querySelectorAll('li')).forEach(li => {
+        li.addEventListener('click', () => {
+            const id = li.getAttribute('data-fund-id');
+            if (!id) return;
+            window.selectedFundId = id;
+            saveDataToLocalStorage();
+            renderRoadshow();
+        });
+        li.addEventListener('dblclick', () => {
+            const input = li.querySelector('input');
+            if (input) { input.focus(); input.select(); }
+        });
+        li.addEventListener('dragstart', (e) => {
+            const tgt = e.target;
+            const isHandle = (tgt && tgt.classList && (tgt.classList.contains('fund-handle') || tgt.closest && tgt.closest('.fund-handle')));
+            if (!isHandle) { e.preventDefault(); return; }
+            e.dataTransfer.setData('text/plain', li.getAttribute('data-fund-id'));
+            e.dataTransfer.effectAllowed = 'move';
+        });
+    });
+    fundList.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+    fundList.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const srcId = e.dataTransfer.getData('text/plain');
+        const destLi = e.target.closest('li[data-fund-id]');
+        if (!srcId || !destLi) return;
+        const destId = destLi.getAttribute('data-fund-id');
+        if (srcId === destId) return;
+        const list = roadshowData.funds || [];
+        const from = list.findIndex(x => x.id === srcId);
+        const to = list.findIndex(x => x.id === destId);
+        if (from < 0 || to < 0) return;
+        const [moved] = list.splice(from, 1);
+        list.splice(to, 0, moved);
+        saveDataToLocalStorage();
+        renderRoadshow();
+    });
+
+    // Investor 표: 선택된 펀드 기준 + 스케줄 시간순 정렬
+    const fundIdCtx = (window.selectedFundId || null);
+    const investorsRaw = (roadshowData.investors || []).filter(inv => (inv.fundId || null) === fundIdCtx);
+    const daysById = new Map((roadshowData.days || []).map(d => [d.id, d]));
+    const toTs = (m) => {
+        const day = daysById.get(m.dayId);
+        const dateObj = coerceDayDate(day) || new Date();
+        const [hh,mm] = String(m.start || '00:00').split(':').map(Number);
+        const dt = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), hh||0, mm||0, 0, 0);
+        return dt.getTime();
+    };
+    const meetingsOfFund = (roadshowData.meetings || []).filter(m => (m.fundId || null) === fundIdCtx);
+    const earliestTsByInvestor = new Map();
+    meetingsOfFund.forEach(m => {
+        const key = String(m.company || '').trim().toLowerCase();
+        if (!key) return;
+        const t = toTs(m);
+        const prev = earliestTsByInvestor.get(key);
+        if (prev == null || t < prev) earliestTsByInvestor.set(key, t);
+    });
+    const investors = investorsRaw
+        .map(inv => ({ inv, key: earliestTsByInvestor.get(String(inv.investor || '').trim().toLowerCase()) }))
+        .sort((a,b) => {
+            if (a.key == null && b.key == null) return 0;
+            if (a.key == null) return 1;
+            if (b.key == null) return -1;
+            return a.key - b.key;
+        })
+        .map(x => x.inv);
+
     invBody.innerHTML = investors.map((inv, idx) => `
         <tr data-rs-investor-id="${inv.id}">
             <td class="number-col">${idx + 1}</td>
@@ -4440,10 +4569,13 @@ function renderRoadshow() {
 }
 
 function addRoadshowFund() {
-    const name = prompt('펀드명을 입력하세요:');
-    if (!name || !name.trim()) return;
     roadshowData.funds = roadshowData.funds || [];
-    roadshowData.funds.push({ id: 'fund_' + Date.now(), name: name.trim() });
+    const id = 'fund_' + Date.now();
+    const index = roadshowData.funds.length + 1;
+    const name = `Fund ${index}`;
+    roadshowData.funds.push({ id, name });
+    // 방금 추가한 펀드를 활성 컨텍스트로 설정
+    window.selectedFundId = id;
     saveDataToLocalStorage();
     renderRoadshow();
 }
@@ -4488,21 +4620,20 @@ function openRoadshowMeetingModal(opts = {}) {
     const addrInput = document.getElementById('rs-address');
     const lpInput = document.getElementById('rs-lp');
     const kbInput = document.getElementById('rs-kb');
+    const deleteBtn = document.getElementById('rs-delete-btn');
     if (!modal || !form) return;
+    // 드래그 직후 연달아 열릴 때 포커스/스크롤 충돌 방지
+    try { modal.style.display = 'block'; modal.offsetHeight; modal.style.display = 'none'; } catch(_) {}
 
-    // Fund 옵션
+    // Fund/Day UI 제거 대응: 데이터만 준비
     const funds = roadshowData.funds || [];
-    fundSel.innerHTML = funds.map(f => `<option value="${f.id}">${escapeHtml(f.name || f.id)}</option>`).join('');
-
-    // Day 옵션
     const days = roadshowData.days || [];
-    daySel.innerHTML = days.map(d => `<option value="${d.id}">${escapeHtml(d.label || d.id)}</option>`).join('');
 
     // 시간 옵션 (30분 단위)
     const times = buildHalfHourTimes();
     const timeOptions = times.map(t => `<option value="${t}">${t}</option>`).join('');
     startSel.innerHTML = timeOptions;
-    endSel.innerHTML = timeOptions + `<option value="24:00">24:00</option>`;
+    endSel.innerHTML = timeOptions + `<option value="22:00">22:00</option>`;
 
     // 값 세팅
     let m = null;
@@ -4510,44 +4641,65 @@ function openRoadshowMeetingModal(opts = {}) {
         m = (roadshowData.meetings || []).find(x => x.id === opts.id);
     }
     if (m) {
-        fundSel.value = m.fundId || selectedFundId || (funds[0]?.id || '');
-        daySel.value = m.dayId;
         startSel.value = m.start;
         endSel.value = m.end || m.start;
         companyInput.value = m.company || '';
-        staffInput.value = m.staff || '';
         noteInput.value = m.note || '';
         addrInput.value = m.address || '';
         lpInput.value = Array.isArray(m.lpAttendees) ? m.lpAttendees.join(', ') : (m.lpAttendees || '');
         kbInput.value = Array.isArray(m.kbSecurities) ? m.kbSecurities.join(', ') : (m.kbSecurities || '');
         openRoadshowMeetingId = m.id;
+        if (deleteBtn) deleteBtn.style.display = 'inline-flex';
     } else {
-        fundSel.value = selectedFundId || (funds[0]?.id || '');
-        daySel.value = (opts.dayId && days.some(d => d.id === opts.dayId)) ? opts.dayId : (days[0]?.id || '');
+        // 새 미팅: 선택된 fund/day는 UI 없이 컨텍스트로 결정
         startSel.value = opts.start || times[0];
         endSel.value = opts.end || opts.start || times[0];
         companyInput.value = '';
-        staffInput.value = '';
         noteInput.value = '';
         addrInput.value = '';
         lpInput.value = '';
         kbInput.value = '';
         openRoadshowMeetingId = null;
+        if (deleteBtn) deleteBtn.style.display = 'none';
     }
 
     modal.style.display = 'block';
 
+    // 삭제 버튼 핸들러
+    if (deleteBtn) {
+        deleteBtn.onclick = () => {
+            if (!openRoadshowMeetingId) return;
+            if (!confirm('이 일정을 삭제할까요?')) return;
+            roadshowData.meetings = (roadshowData.meetings || []).filter(x => x.id !== openRoadshowMeetingId);
+            saveDataToLocalStorage();
+            renderRoadshow();
+            closeRoadshowMeetingModal();
+        };
+    }
+
     form.onsubmit = (e) => {
         e.preventDefault();
+        // 현재 컨텍스트에서 fund/day 결정
+        const resolvedFundId = (openRoadshowMeetingId ? (m && m.fundId) : (selectedFundId || (funds[0]?.id || ''))) || '';
+        const resolvedDayId = (openRoadshowMeetingId ? (m && m.dayId) : ((opts.dayId && days.some(d => d.id === opts.dayId)) ? opts.dayId : (days[0]?.id || '')));
+        // 주소 자동 채움: institutionsData 에서 한글/영문 주소 결합
+        const companyName = companyInput.value.trim();
+        const allInst = Object.values(institutionsData || {}).flat();
+        const match = allInst.find(inst => [inst.name, inst.englishFullName, inst.abbreviation].filter(Boolean).some(n => String(n).toLowerCase() === companyName.toLowerCase()));
+        let autoAddress = '';
+        if (match) {
+            const ko = match.addressKorean || '';
+            const en = match.addressEnglish || '';
+            autoAddress = [ko, en].filter(Boolean).join('\n');
+        }
         const payload = {
-            fundId: fundSel.value,
-            dayId: daySel.value,
+            fundId: resolvedFundId,
+            dayId: resolvedDayId,
             start: startSel.value,
             end: endSel.value,
-            company: companyInput.value.trim(),
-            staff: staffInput.value.trim(),
+            company: companyName,
             note: noteInput.value.trim(),
-            address: addrInput.value.trim(),
+            address: (addrInput.value.trim() || autoAddress),
             lpAttendees: (lpInput.value || '').split(',').map(s => s.trim()).filter(Boolean),
             kbSecurities: (kbInput.value || '').split(',').map(s => s.trim()).filter(Boolean)
         };
@@ -4557,8 +4709,11 @@ function openRoadshowMeetingModal(opts = {}) {
             if (idx >= 0) roadshowData.meetings[idx] = { ...roadshowData.meetings[idx], ...payload };
         } else {
             roadshowData.meetings.push({ id: 'meet_' + Date.now(), ...payload });
+            // 드래그로 추가 저장 시, 회사명이 있으면 옆 테이블(Investor)에 자동 행 추가
+            ensureInvestorForCompany(payload.company, payload.fundId);
         }
         saveDataToLocalStorage();
+        // 저장 직후, 같은 펀드의 Investor 표를 시간순으로 재정렬하기 위해 즉시 렌더
         renderRoadshow();
         closeRoadshowMeetingModal();
     };
@@ -4568,14 +4723,16 @@ function openRoadshowMeetingModal(opts = {}) {
 }
 
 function updateRoadshowDatalists() {
-    // 기관명: LP/GP/기관 테이블 이름 + GP 이름들을 합침
+    // 기관명: LP 리스트에서만 추출 (영문 Full name 혹은 약어)
     const companyDl = document.getElementById('rs-company-datalist');
     const staffDl = document.getElementById('rs-staff-datalist');
     if (companyDl) {
-        const institutionNames = Object.values(institutionsData || {}).flat().map(i => i.name).filter(Boolean);
-        const gpNames = Object.values(gpsData || {}).flat().map(g => g.name).filter(Boolean);
-        const names = [...new Set([...(institutionNames||[]), ...(gpNames||[])])].filter(Boolean);
-        companyDl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+        const lpNames = (Object.values(institutionsData || {}).flat() || [])
+            .map(i => [i.englishFullName || i.abbreviation || i.name, i.abbreviation || i.englishFullName || i.name])
+            .flat()
+            .filter(Boolean);
+        const unique = [...new Set(lpNames)];
+        companyDl.innerHTML = unique.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
     }
     if (staffDl) {
         const contactsA = Object.values(institutionsContacts || {}).flat().map(c => c.name).filter(Boolean);
@@ -4585,51 +4742,85 @@ function updateRoadshowDatalists() {
     }
 }
 
+function ensureInvestorForCompany(company, fundId) {
+    const name = String(company || '').trim();
+    if (!name) return;
+    roadshowData.investors = roadshowData.investors || [];
+    const exists = roadshowData.investors.some(i => (i.fundId || null) === (fundId || null) && (i.investor || '').trim().toLowerCase() === name.toLowerCase());
+    if (exists) return;
+    const id = 'inv_' + Date.now();
+    roadshowData.investors.push({ id, fundId: fundId || null, investor: name, type: '', address: '', lpAttendees: '', kbSecurities: '' });
+}
+
 function attachRoadshowSlotEvents() {
     const grid = document.getElementById('roadshow-grid-body');
     if (!grid) return;
     let dragging = false;
-    let dragDay = null;
+    let dragDay = null; // day at drag start
+    let currentDay = null; // day under pointer (for visual + final)
     let startTime = null;
     let endTime = null;
 
     const clearSelecting = () => grid.querySelectorAll('.slot-selecting').forEach(el => el.classList.remove('slot-selecting'));
 
+    const startDrag = (td, e) => {
+        dragging = true;
+        dragDay = td.getAttribute('data-day-id');
+        currentDay = dragDay;
+        startTime = td.getAttribute('data-time');
+        endTime = startTime;
+        clearSelecting();
+        td.classList.add('slot-selecting');
+        e.preventDefault();
+    };
+    const moveDrag = (td) => {
+        if (!dragging) return;
+        const day = td.getAttribute('data-day-id');
+        currentDay = day || dragDay;
+        endTime = td.getAttribute('data-time');
+        clearSelecting();
+        const [a,b] = orderTimes(startTime, endTime);
+        markSelecting(currentDay, a, b);
+    };
+    const endDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        const [a,b] = orderTimes(startTime, endTime);
+        clearSelecting();
+        const finalDay = currentDay || dragDay;
+        setTimeout(() => openRoadshowMeetingModal({ dayId: finalDay, start: a, end: nextHalfHour(b) }), 0);
+        window.removeEventListener('pointermove', onPointerMove, true);
+        window.removeEventListener('mousemove', onPointerMove, true);
+    };
+
+    const onPointerMove = (e) => {
+        if (!dragging) return;
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        if (!el) return;
+        const td = el.closest && el.closest('.slot');
+        if (td) moveDrag(td);
+    };
+
     grid.querySelectorAll('.slot').forEach(td => {
-        td.addEventListener('mousedown', (e) => {
-            dragging = true;
-            dragDay = td.getAttribute('data-day-id');
-            startTime = td.getAttribute('data-time');
-            endTime = startTime;
-            clearSelecting();
-            td.classList.add('slot-selecting');
-            e.preventDefault();
-        });
-        td.addEventListener('mouseenter', () => {
-            if (!dragging) return;
-            const day = td.getAttribute('data-day-id');
-            if (day !== dragDay) return;
-            endTime = td.getAttribute('data-time');
-            // 영역 표시
-            clearSelecting();
-            const [a,b] = orderTimes(startTime, endTime);
-            markSelecting(dragDay, a, b);
-        });
-        td.addEventListener('click', (e) => {
-            if (dragging) return; // 드래그 종료 후 click 방지
+        // pointer events
+        td.addEventListener('pointerdown', (e) => { startDrag(td, e); window.addEventListener('pointermove', onPointerMove, true); });
+        td.addEventListener('pointerenter', () => moveDrag(td));
+        // mouse fallback
+        td.addEventListener('mousedown', (e) => { startDrag(td, e); window.addEventListener('mousemove', onPointerMove, true); });
+        td.addEventListener('mouseenter', () => moveDrag(td));
+        td.addEventListener('click', () => {
+            if (dragging) return;
             const dayId = td.getAttribute('data-day-id');
             const start = td.getAttribute('data-time');
             openRoadshowMeetingModal({ dayId, start });
         });
     });
 
-    document.addEventListener('mouseup', () => {
-        if (!dragging) return;
-        dragging = false;
-        const [a,b] = orderTimes(startTime, endTime);
-        clearSelecting();
-        openRoadshowMeetingModal({ dayId: dragDay, start: a, end: nextHalfHour(b) });
-    }, { once: true });
+    const handleUp = () => endDrag();
+    window.addEventListener('pointerup', handleUp, true);
+    window.addEventListener('mouseup', handleUp, true);
+    window.addEventListener('mouseleave', handleUp, true);
+    window.addEventListener('blur', handleUp, true);
 }
 
 function markSelecting(dayId, start, end) {
@@ -4650,7 +4841,7 @@ function nextHalfHour(t) { const m=timeToMinutes(t)+30; const h=Math.floor(m/60)
 
 function buildHalfHourTimes() {
     const res = [];
-    for (let h = 9; h <= 17; h++) {
+    for (let h = 8; h <= 21; h++) { // 08:00 ~ 21:30 (마지막 슬롯 21:30)
         ['00','30'].forEach(m => res.push(`${String(h).padStart(2,'0')}:${m}`));
     }
     return res;
@@ -4659,12 +4850,29 @@ function buildHalfHourTimes() {
 function renderMeetingAt(dayId, start) {
     const m = (roadshowData.meetings || []).find(x => x.dayId === dayId && x.start === start);
     if (!m) return '';
-    const title = escapeHtml(m.investor || '미팅');
-    const meta = escapeHtml(`${m.type || ''}`);
-    return `<div class="meeting" onclick="event.stopPropagation(); openRoadshowMeetingModal({ id: '${m.id}' })">
-        <span class="title">${title}</span>
-        <span class="meta">${meta}</span>
-    </div>`;
+    const label = escapeHtml(m.company || '');
+    return `<div class="merged-content" onclick="event.stopPropagation(); openRoadshowMeetingModal({ id: '${m.id}' })">${label}</div>`;
+}
+
+function renderGridCell(dayId, time) {
+    const fundCtx = (window.selectedFundId || null);
+    const meeting = (roadshowData.meetings || []).find(m => (m.fundId || null) === fundCtx && m.dayId === dayId && timeGte(time, m.start) && timeLte(time, (m.end || m.start)));
+    if (!meeting) {
+        return `<td class=\"slot\" data-day-id=\"${dayId}\" data-time=\"${time}\"></td>`;
+    }
+    // range 계산
+    const [s,e] = orderTimes(meeting.start, meeting.end || meeting.start);
+    const isStart = time === s;
+    const isInside = timeGte(time, s) && timeLte(time, e);
+    const baseClass = isInside ? 'slot reserved merged' : 'slot';
+    // 시작 셀에만 콘텐츠 표시, 나머지는 빈 셀로 유지
+    if (isStart) {
+        const rowSpan = Math.max(1, (timeToMinutes(e) - timeToMinutes(s)) / 30);
+        return `<td class=\"${baseClass}\" data-day-id=\"${dayId}\" data-time=\"${time}\" rowspan=\"${rowSpan}\">${renderMeetingAt(dayId, s)}</td>`;
+    } else {
+        // 병합에 의해 실제 DOM에는 생성되지 않도록 빈 문자열 반환
+        return '';
+    }
 }
 
 function addRoadshowDay() {
@@ -4672,6 +4880,66 @@ function addRoadshowDay() {
     if (!label || !label.trim()) return;
     const id = 'day_' + Date.now();
     roadshowData.days.push({ id, label: label.trim() });
+    saveDataToLocalStorage();
+    renderRoadshow();
+}
+
+function insertRoadshowDayAt(index) {
+    const label = prompt('추가할 날짜 라벨(예: 8월 29일 금)을 입력하세요:');
+    if (!label || !label.trim()) return;
+    const id = 'day_' + Date.now();
+    roadshowData.days = roadshowData.days || [];
+    const i = Math.max(0, Math.min(index, roadshowData.days.length));
+    roadshowData.days.splice(i, 0, { id, label: label.trim() });
+    saveDataToLocalStorage();
+    renderRoadshow();
+}
+
+// === Workday helpers: weekend-skip and English short label ===
+function toIsoDate(d) { const yy=d.getFullYear(); const mm=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${yy}-${mm}-${dd}`; }
+function fromIsoDate(s) { const [y,m,d]=String(s||'').split('-').map(Number); if(!y||!m||!d) return null; return new Date(y, m-1, d); }
+function isWeekend(d){ const w=d.getDay(); return w===0||w===6; }
+function shiftWorkday(base, dir){
+    let d = new Date(base.getTime());
+    const step = dir==='prev' ? -1 : 1;
+    do { d.setDate(d.getDate() + step); } while(isWeekend(d));
+    return d;
+}
+const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const WEEKDAYS_EN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function formatRoadshowDayLabel(date){
+    try {
+        const d = new Date(date);
+        return `${MONTHS_EN[d.getMonth()]} ${d.getDate()} (${WEEKDAYS_EN[d.getDay()]})`;
+    } catch(_) { return ''; }
+}
+function coerceDayDate(day){
+    if (day && day.iso) { const d = fromIsoDate(day.iso); if (d) return d; }
+    // fallback: try parse label if exists
+    return new Date();
+}
+
+function insertRoadshowWorkday(baseIndex, direction){
+    roadshowData.days = roadshowData.days || [];
+    const base = roadshowData.days[baseIndex];
+    const baseDate = coerceDayDate(base) || new Date();
+    const next = shiftWorkday(baseDate, direction);
+    const item = { id: 'day_' + Date.now(), iso: toIsoDate(next), label: formatRoadshowDayLabel(next) };
+    const insertIndex = direction==='prev' ? baseIndex : baseIndex+1;
+    roadshowData.days.splice(Math.max(0, Math.min(insertIndex, roadshowData.days.length)), 0, item);
+    saveDataToLocalStorage();
+    renderRoadshow();
+}
+
+function deleteRoadshowDayAt(index){
+    roadshowData.days = roadshowData.days || [];
+    if (index < 0 || index >= roadshowData.days.length) return;
+    const target = roadshowData.days[index];
+    if (!confirm(`Delete day column: ${target && target.label ? target.label : 'this day'}?`)) return;
+    const dayId = target.id;
+    roadshowData.days.splice(index, 1);
+    // 해당 날짜의 미팅도 함께 제거
+    roadshowData.meetings = (roadshowData.meetings || []).filter(m => m.dayId !== dayId);
     saveDataToLocalStorage();
     renderRoadshow();
 }
@@ -5297,7 +5565,7 @@ function attachMiniGridEvents(dayId) {
 }
 
 // Roadshow grid dynamic columns (excluding sticky time column)
-let rsExtraCols = 3; // default number of day columns shown besides time column
+let rsExtraCols = 3; // deprecated in rendering path (now uses actual day count)
 function addRoadshowColumn() {
     rsExtraCols += 1;
     renderRoadshow();
@@ -5314,7 +5582,9 @@ function autoFitRoadshowColumns() {
         const container = table.parentElement; // .roadshow-grid
         const totalWidth = container.clientWidth;
         const timeWidth = 90; // sticky time col width
-        const cols = rsExtraCols;
+        // 실제 표시되는 day 열 개수로 폭 계산
+        const visibleCount = Math.max(1, (roadshowData.days || []).length);
+        const cols = visibleCount;
         const each = Math.max(140, Math.floor((totalWidth - timeWidth) / cols));
         const ths = table.querySelectorAll('th');
         ths.forEach((th, idx) => {

@@ -260,6 +260,37 @@ body {
     width: 80px;
 }
 
+/* RFP 테이블: 열 간격 전부 고정 (nth-child 기준) */
+#rfp-table th:nth-child(1),
+#rfp-table td:nth-child(1) { width: 60px; }
+#rfp-table th:nth-child(2),
+#rfp-table td:nth-child(2) { width: 22%; }
+#rfp-table th:nth-child(3),
+#rfp-table td:nth-child(3) { width: 10%; }
+#rfp-table th:nth-child(4),
+#rfp-table td:nth-child(4) { width: 15%; }
+#rfp-table th:nth-child(5),
+#rfp-table td:nth-child(5) { width: 12%; }
+#rfp-table th:nth-child(6),
+#rfp-table td:nth-child(6) { width: 12%; }
+#rfp-table th:nth-child(7),
+#rfp-table td:nth-child(7) { width: 18%; }
+#rfp-table th:nth-child(8),
+#rfp-table td:nth-child(8) { width: 18%; }
+#rfp-table th:nth-child(9),
+#rfp-table td:nth-child(9) { width: 12%; }
+#rfp-table th:nth-child(10),
+#rfp-table td:nth-child(10) { width: 80px; }
+
+/* 줄바꿈/중앙정렬 유지 */
+#rfp-table th,
+#rfp-table td {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  text-align: center !important;
+}
+
 /* RFP 테이블 열 너비 조정 컨트롤 */
 .column-resize-controls {
     background: #f8f9fa;
@@ -2526,11 +2557,20 @@ select option { text-align: center; }
 /* Roadshow Scheduling */
 .roadshow-layout { display: grid; grid-template-columns: 260px 1.5fr 1fr; gap: 12px; height: 100%; min-height: 0; }
 .roadshow-funds { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e9ecef; padding: 8px; overflow: auto; }
+.roadshow-funds .section-header { position: relative; display: flex; align-items: center; }
+.roadshow-funds .section-header h3 { flex: 1; text-align: center; margin: 0; }
+.roadshow-funds .section-header .add-row-btn { position: absolute; right: 0; top: 50%; transform: translateY(-50%); padding: 6px 10px; min-height: 28px; }
 .fund-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .fund-list li { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center; }
-.fund-list input { flex: 1; padding: 8px 10px; border: none; box-shadow: none; background: transparent; border-radius: 0; text-align: center; font-size: 1.05rem; }
+.fund-handle { cursor: grab; color: #94a3b8; padding: 4px; display: inline-flex; align-items: center; }
+.fund-handle:active { cursor: grabbing; }
+.fund-delete { background: none; border: 1px solid #e9ecef; color: #dc3545; border-radius: 6px; padding: 4px 6px; cursor: pointer; }
+.fund-delete:hover { background: #ffecec; }
+.fund-list input { flex: 1; padding: 8px 10px; border: 1px solid #e9ecef; background: #fff; border-radius: 8px; text-align: center; font-size: 1.05rem; cursor: pointer; transition: all .15s ease; }
+.fund-list input:hover { background: #f8faff; border-color: #d0e3ff; box-shadow: 0 2px 8px rgba(13,110,253,0.12); }
+.fund-list input:focus { cursor: text; background: #fff; box-shadow: 0 0 0 3px rgba(13,110,253,0.20); }
 .fund-list input:focus { outline: none; border-bottom: 2px solid #e9ecef; }
-.fund-list li.active input { font-weight: 700; color: #2c3e50; }
+.fund-list li.active input { font-weight: 700; color: #2c3e50; background: #e7f1ff; border-color: #b6d4fe; }
 
 /* Excel-like grid table for roadshow */
 .roadshow-grid { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e9ecef; overflow: auto; min-height: 420px; }
@@ -2543,7 +2583,13 @@ select option { text-align: center; }
 .slot { position: relative; cursor: pointer; transition: background 0.15s ease; }
 .slot:hover { background: #f8f9ff; }
 .slot.slot-selecting { background: #e6f2ff; }
+.slot.reserved { background: #e8f7e4; } /* 연한 연두색 */
+.slot.merged { text-align: center; font-weight: 700; color: #1b5e20; }
+.slot .merged-content { display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; padding: 4px 6px; }
 .slot .meeting { position: absolute; left: 4px; right: 4px; top: 4px; bottom: 4px; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 6px; padding: 4px 6px; text-align: left; overflow: hidden; }
+
+/* 드래그 중 텍스트 선택 방지로 안정성 확보 */
+.roadshow-grid, #roadshow-grid-table, #roadshow-grid-body { user-select: none; -webkit-user-select: none; -ms-user-select: none; }
 .slot .meeting .title { font-weight: 700; color: #1976d2; font-size: 0.85rem; display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .slot .meeting .meta { color: #495057; font-size: 0.78rem; display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 
@@ -2727,7 +2773,7 @@ select option { text-align: center; }
 .header-right .add-row-btn.add-row-btn--burgundy { min-height: 36px; }
 
 /* Roadshow layout: ensure left funds panel is visible with mini scheduler */
-.roadshow-layout.two-col { grid-template-columns: 260px 1.5fr 1fr; }
+.roadshow-layout.two-col { grid-template-columns: 245px 1.35fr 1.35fr; }
 .roadshow-funds { display: block; }
 /* Stretch panes */
 .roadshow-layout.two-col { align-items: stretch; }
@@ -2744,3 +2790,32 @@ select option { text-align: center; }
 .schedule-table { table-layout: fixed; }
 .schedule-table .time-col { width: 90px; background: #f8fafc; color: #6b7280; position: sticky; left: 0; z-index: 3; }
 .roadshow-grid { overflow: auto; }
+/* Roadshow header column add handles (hover + buttons like Word) */
+.schedule-table thead th.day-col { position: relative; }
+.add-day-handle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #0d6efd;
+  color: #fff;
+  border: 1px solid #0a58ca;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.add-day-handle.left { left: -9px; }
+.add-day-handle.right { right: -9px; }
+.schedule-table thead th.day-col:hover .add-day-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+.add-day-handle:hover { transform: translateY(-50%) scale(1.06); }
