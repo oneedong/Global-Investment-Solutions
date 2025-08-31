@@ -227,6 +227,8 @@ let roadshowData = {
 };
 // 선택 상태
 let openRoadshowMeetingId = null;
+// 현재 모달 컨텍스트(삭제/업데이트 신뢰도 향상)
+let roadshowModalContext = { id: null, fundId: null, dayId: null, start: null, end: null };
 let selectedFundId = null;
 
 // 기관 연락처(팝업 대시보드) 상태
@@ -503,31 +505,37 @@ function switchDashboard(dashboardName) {
     currentDashboard = dashboardName;
 }
 
-// 그룹핑 방식 전환
-function switchGrouping(type) {
-    // 버튼 상태 변경
-    document.querySelectorAll('.grouping-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.getElementById(`${type}-grouping`).classList.add('active');
-    
-    // 리스트 표시/숨김
-    const categoryList = document.getElementById('institutions-category-list');
-    const regionList = document.getElementById('institutions-region-list');
-    
-    if (type === 'category') {
-        categoryList.style.display = 'block';
-        regionList.style.display = 'none';
-        renderInstitutionsDashboard();
-    } else if (type === 'region') {
-        categoryList.style.display = 'none';
-        regionList.style.display = 'block';
-        renderInstitutionsByRegion();
-    } else if (type === 'regionAll') {
-        categoryList.style.display = 'none';
-        regionList.style.display = 'none';
-        renderInstitutionsRegionAll();
-    }
+// 보기 전환: 테이블 / 전체 지도
+function switchInstitutionsView(view) {
+    try {
+        const tableBtn = document.getElementById('institutions-table-view');
+        const mapBtn = document.getElementById('institutions-map-view');
+        const tableView = document.getElementById('table-view');
+        const mapView = document.getElementById('map-view');
+        const categoryList = document.getElementById('institutions-category-list');
+
+        if (!tableBtn || !mapBtn || !tableView || !mapView) return;
+
+        if (view === 'map') {
+            tableBtn.classList.remove('active');
+            mapBtn.classList.add('active');
+            tableView.style.display = 'none';
+            mapView.style.display = 'block';
+            if (categoryList) categoryList.style.display = 'none';
+            isMapView = true;
+            initializeMap();
+            showInstitutionsOnMap();
+        } else {
+            // default: table
+            mapBtn.classList.remove('active');
+            tableBtn.classList.add('active');
+            mapView.style.display = 'none';
+            tableView.style.display = 'block';
+            if (categoryList) categoryList.style.display = 'block';
+            isMapView = false;
+            renderInstitutionsDashboard();
+        }
+    } catch (_) {}
 }
 
 // 주소에서 지역 추출
@@ -749,28 +757,8 @@ let isMapView = false;
 let markerClusterer = null;
 const geocodeCache = new Map(); // address -> {lat, lng}
 
-// 지도 뷰 토글
-function toggleMapView() {
-    const mapBtn = document.getElementById('map-view-btn');
-    const tableView = document.getElementById('table-view');
-    const mapView = document.getElementById('map-view');
-    
-    isMapView = !isMapView;
-    
-    if (isMapView) {
-        mapBtn.classList.add('active');
-        mapBtn.innerHTML = '<i class="fas fa-table"></i> 테이블로 보기';
-        tableView.style.display = 'none';
-        mapView.style.display = 'block';
-        initializeMap();
-        showInstitutionsOnMap();
-    } else {
-        mapBtn.classList.remove('active');
-        mapBtn.innerHTML = '<i class="fas fa-map"></i> 지도로 보기';
-        tableView.style.display = 'block';
-        mapView.style.display = 'none';
-    }
-}
+// 호환용: 이전 토글 함수를 새 전환 함수로 연결
+function toggleMapView() { switchInstitutionsView(isMapView ? 'table' : 'map'); }
 
 // 지도 초기화
 function initializeMap() {
@@ -793,30 +781,11 @@ function showInstitutionsOnMap() {
 	markers.forEach(marker => marker.setMap(null));
 	markers = [];
 	
-	// 현재 선택된 지역의 기관들만 표시
-	const currentGrouping = document.querySelector('.grouping-btn.active').id;
-	
+	// 모든 기관을 지도에 표시 (전역)
 	let institutionsToShow = [];
-	
-	if (currentGrouping === 'category-grouping') {
-		Object.values(institutionsData).forEach(institutions => {
-			institutionsToShow = institutionsToShow.concat(institutions);
-		});
-	} else if (currentGrouping === 'region-grouping') {
-		const activeRegion = document.querySelector('#institutions-region-list li.active span').textContent;
-		Object.entries(institutionsData).forEach(([category, institutions]) => {
-			institutions.forEach(institution => {
-				const region = extractRegionFromAddress(institution.address);
-				if (region === activeRegion) {
-					institutionsToShow.push(institution);
-				}
-			});
-		});
-	} else if (currentGrouping === 'region-all-grouping') {
-		Object.values(institutionsData).forEach(list => {
-			institutionsToShow = institutionsToShow.concat(list);
-		});
-	}
+	Object.values(institutionsData).forEach(list => {
+		institutionsToShow = institutionsToShow.concat(list);
+	});
 	
 	// 주소를 좌표로 변환하여 마커 표시 (Kakao Geocoder)
 	const geocoder = new kakao.maps.services.Geocoder();
@@ -2606,7 +2575,7 @@ function getDefaultInstitutionsData() {
             make('미래에셋증권 OCIO 고용기금 EIF', 'EIF', 'Mirae Asset Securities EIF (Employment Insurance Fund)'),
             make('미래에셋자산운용 국토부 주택도시기금 MOEL', 'MOEL', 'Mirae Asset AM MOEL (Ministry of Employment and Labor)'),
             make('NH투자증권 국토부 주택도시기금 MOEL', 'MOEL', 'NH Securities MOEL (Ministry of Employment and Labor)'),
-            make('(우정사업본부) 우체국보험 / 우체국예금', '', 'K-Post Insurance / K-Post Savings')
+            make('[우정사업본부] 우체국보험 / 우체국예금', '', 'K-Post Insurance / K-Post Savings')
         ],
         공제회: [
             make('한국교직원공제회', 'KTCU', 'Korea Teachers\' Credit Union'),
@@ -2940,10 +2909,17 @@ function initializeRealTimeSync() {
 					changed = true;
 				}
 			}
-			if (data.roadshowData && JSON.stringify(data.roadshowData) !== JSON.stringify(roadshowData)) {
-				roadshowData = data.roadshowData;
-				renderIfActive('roadshow-dashboard', renderRoadshow);
-				changed = true;
+			if (data.roadshowData) {
+				const incoming = data.roadshowData || {};
+				const inCount = (incoming.days?.length||0) + (incoming.meetings?.length||0) + (incoming.investors?.length||0);
+				const curCount = (roadshowData?.days?.length||0) + (roadshowData?.meetings?.length||0) + (roadshowData?.investors?.length||0);
+				if (inCount === 0 && curCount > 0) {
+					// 빈 데이터로의 덮어쓰기를 방지
+				} else if (JSON.stringify(incoming) !== JSON.stringify(roadshowData)) {
+					roadshowData = incoming;
+					renderIfActive('roadshow-dashboard', renderRoadshow);
+					changed = true;
+				}
 			}
 			if (changed) updateConnectionStatus(true);
 		});
@@ -3209,7 +3185,11 @@ function syncDataToServer() {
                           Object.values(institutionsData||{}).reduce((a, l)=>a+(l||[]).length,0) +
                           Object.values(gpsData||{}).reduce((a, l)=>a+(l||[]).length,0) +
                           Object.values(institutionsContacts||{}).reduce((a, l)=>a+(Array.isArray(l)?l.length:0),0) +
-                          Object.values(gpContacts||{}).reduce((a, l)=>a+(Array.isArray(l)?l.length:0),0);
+                          Object.values(gpContacts||{}).reduce((a, l)=>a+(Array.isArray(l)?l.length:0),0) +
+                          // 로드쇼 데이터도 계산에 포함 (이 값만 있어도 저장 진행)
+                          ((roadshowData&&Array.isArray(roadshowData.days)?roadshowData.days.length:0) +
+                           (roadshowData&&Array.isArray(roadshowData.meetings)?roadshowData.meetings.length:0) +
+                           (roadshowData&&Array.isArray(roadshowData.investors)?roadshowData.investors.length:0));
             // 연락처 복구 시 total이 작을 수 있어 최소치 완화
             if (total < 1) {
                 console.warn('Guard: 데이터가 거의 비어 있습니다. 저장을 건너뜁니다.');
@@ -3296,6 +3276,18 @@ function syncDataFromServer() {
                     if (data.tableData && JSON.stringify(data.tableData) !== JSON.stringify(tableData)) {
                         tableData = filterDeletedItems(data.tableData, 'tableData');
                         renderIfActive('contacts-dashboard', renderTable);
+                    }
+                    // roadshowData: 서버가 비어 있으면 로컬 보존
+                    if (data.roadshowData) {
+                        const incoming = data.roadshowData || {};
+                        const inCount = (incoming.days?.length||0) + (incoming.meetings?.length||0) + (incoming.investors?.length||0);
+                        const curCount = (roadshowData?.days?.length||0) + (roadshowData?.meetings?.length||0) + (roadshowData?.investors?.length||0);
+                        if (!(inCount === 0 && curCount > 0)) {
+                            if (JSON.stringify(incoming) !== JSON.stringify(roadshowData)) {
+                                roadshowData = incoming;
+                                renderIfActive('roadshow-dashboard', renderRoadshow);
+                            }
+                        }
                     }
                     
                     if (data.rfpData && JSON.stringify(data.rfpData) !== JSON.stringify(rfpData)) {
@@ -4407,6 +4399,11 @@ function renderRoadshow() {
             }
         } catch (_) {}
     })();
+    // 펀드 기본 선택 보장: 그리드 렌더 전에 지정해야 셀 필터가 정상 동작
+    let funds = roadshowData.funds || [];
+    if (!window.selectedFundId || !funds.some(f => f.id === window.selectedFundId)) {
+        window.selectedFundId = funds[0] ? funds[0].id : null;
+    }
     // 헤더 (sticky time column + dynamic day columns)
     const timeHeader = `<th class="time-col">&nbsp;</th>`;
     const visibleCount = Math.max(1, (roadshowData.days || []).length);
@@ -4459,11 +4456,8 @@ function renderRoadshow() {
     const fundList = document.getElementById('roadshow-fund-list');
     if (!invBody || !fundList) return;
 
-    // 펀드 기본 선택 보장
-    const funds = roadshowData.funds || [];
-    if (!window.selectedFundId || !funds.some(f => f.id === window.selectedFundId)) {
-        window.selectedFundId = funds[0] ? funds[0].id : null;
-    }
+    // 최신 펀드 배열 참조(상단에서 보장했지만 갱신)
+    funds = roadshowData.funds || funds || [];
 
     // 펀드 목록 렌더
     fundList.innerHTML = (funds || []).map(f => `
@@ -4616,6 +4610,7 @@ function openRoadshowMeetingModal(opts = {}) {
     const endSel = document.getElementById('rs-end-select');
     const companyInput = document.getElementById('rs-company');
     const staffInput = document.getElementById('rs-staff');
+    const typeSelect = document.getElementById('rs-type');
     const noteInput = document.getElementById('rs-note');
     const addrInput = document.getElementById('rs-address');
     const lpInput = document.getElementById('rs-lp');
@@ -4640,41 +4635,219 @@ function openRoadshowMeetingModal(opts = {}) {
     if (opts.id) {
         m = (roadshowData.meetings || []).find(x => x.id === opts.id);
     }
+    // 보강: id가 없더라도 dayId/start 조합으로 기존 미팅을 역으로 찾아 편집 모드로 연다
+    if (!m && opts.dayId && opts.start) {
+        const fundCtx = (window.selectedFundId || null);
+        // 1차: 현재 선택된 펀드에서 정확 일치
+        m = (roadshowData.meetings || []).find(x => (x.fundId || null) === fundCtx && x.dayId === opts.dayId && x.start === opts.start);
+        // 2차: 현재 펀드에서 시간 구간 포함
+        if (!m) m = (roadshowData.meetings || []).find(x => (x.fundId || null) === fundCtx && x.dayId === opts.dayId && timeGte(opts.start, x.start) && timeLte((opts.end||opts.start), (x.end || x.start)));
+        // 3차: 펀드 무시하고 시간 구간 포함 (보수적 fallback)
+        if (!m) m = (roadshowData.meetings || []).find(x => x.dayId === opts.dayId && timeGte(opts.start, x.start) && timeLte((opts.end||opts.start), (x.end || x.start)));
+    }
+    // 모달 컨텍스트 초기화
+    roadshowModalContext = { id: null, fundId: null, dayId: null, start: null, end: null };
+
     if (m) {
         startSel.value = m.start;
         endSel.value = m.end || m.start;
         companyInput.value = m.company || '';
+        if (typeSelect) typeSelect.value = m.type || '';
         noteInput.value = m.note || '';
         addrInput.value = m.address || '';
         lpInput.value = Array.isArray(m.lpAttendees) ? m.lpAttendees.join(', ') : (m.lpAttendees || '');
         kbInput.value = Array.isArray(m.kbSecurities) ? m.kbSecurities.join(', ') : (m.kbSecurities || '');
         openRoadshowMeetingId = m.id;
-        if (deleteBtn) deleteBtn.style.display = 'inline-flex';
+        roadshowModalContext = { id: m.id, fundId: m.fundId || null, dayId: m.dayId, start: m.start, end: (m.end || m.start) };
+        if (deleteBtn) {
+            deleteBtn.style.display = 'inline-flex';
+            deleteBtn.style.visibility = 'visible';
+            deleteBtn.style.opacity = '1';
+            deleteBtn.style.pointerEvents = 'auto';
+            deleteBtn.style.zIndex = '9999';
+            deleteBtn.textContent = '삭제';
+            console.log('삭제 버튼 강제 표시됨:', openRoadshowMeetingId, deleteBtn);
+        }
     } else {
         // 새 미팅: 선택된 fund/day는 UI 없이 컨텍스트로 결정
         startSel.value = opts.start || times[0];
         endSel.value = opts.end || opts.start || times[0];
         companyInput.value = '';
+        if (typeSelect) typeSelect.value = '';
         noteInput.value = '';
         addrInput.value = '';
         lpInput.value = '';
         kbInput.value = '';
         openRoadshowMeetingId = null;
-        if (deleteBtn) deleteBtn.style.display = 'none';
+        roadshowModalContext = { id: null, fundId: (selectedFundId || null), dayId: (opts.dayId || null), start: startSel.value, end: endSel.value };
+        if (deleteBtn) {
+            deleteBtn.style.display = 'none';
+            deleteBtn.style.visibility = 'hidden';
+            deleteBtn.style.opacity = '0';
+            deleteBtn.style.pointerEvents = 'none';
+            console.log('삭제 버튼 숨김 (새 일정)');
+        }
     }
 
     modal.style.display = 'block';
+    
+    // 모달 표시 후 삭제 버튼 상태 재확인 및 강제 생성
+    setTimeout(() => {
+        const deleteBtn2 = document.getElementById('rs-delete-btn');
+        console.log('삭제 버튼 찾기:', deleteBtn2, 'openRoadshowMeetingId:', openRoadshowMeetingId);
+        
+        if (!deleteBtn2) {
+            // 삭제 버튼이 없으면 강제로 생성
+            console.log('삭제 버튼이 없어서 강제 생성');
+            const formActions = modal.querySelector('.form-actions');
+            if (formActions) {
+                const newDeleteBtn = document.createElement('button');
+                newDeleteBtn.type = 'button';
+                newDeleteBtn.id = 'rs-delete-btn';
+                newDeleteBtn.className = 'btn-secondary';
+                newDeleteBtn.textContent = '삭제';
+                newDeleteBtn.style.cssText = 'background:#dc3545 !important; color:white !important; border:1px solid #dc3545 !important; font-weight:bold; display:inline-block !important;';
+                
+                // 취소 버튼 앞에 삽입
+                const cancelBtn = formActions.querySelector('button[onclick*="closeRoadshowMeetingModal"]');
+                if (cancelBtn) {
+                    formActions.insertBefore(newDeleteBtn, cancelBtn);
+                } else {
+                    formActions.appendChild(newDeleteBtn);
+                }
+                console.log('삭제 버튼 강제 생성 완료');
+            }
+        }
+        
+        // 삭제 버튼 표시 (핸들러 연결은 아래 공통 루틴에서 1회 수행)
+        const finalDeleteBtn = document.getElementById('rs-delete-btn');
+        if (finalDeleteBtn) {
+            finalDeleteBtn.style.display = 'inline-flex';
+            finalDeleteBtn.style.visibility = 'visible';
+            finalDeleteBtn.style.opacity = '1';
+            finalDeleteBtn.style.pointerEvents = 'auto';
+        }
+    }, 50);
+    
+    // ESC로 닫기(안정화: key/keypress 모두, 캡처 단계, 중복 리스너 정리)
+    try {
+        if (window.__rsEscHandler) document.removeEventListener('keydown', window.__rsEscHandler, true);
+    } catch(_) {}
+    window.__rsEscHandler = function(ev){
+        const k = ev.key || ev.code || ev.keyCode;
+        if (k === 'Escape' || k === 'Esc' || k === 27) { try { ev.stopPropagation(); } catch(_){} closeRoadshowMeetingModal(); }
+    };
+    document.addEventListener('keydown', window.__rsEscHandler, true);
+    // 드래그 이동: 헤더를 잡고 포인터 기반으로 정확한 오프셋 계산
+    try {
+        const header = modal.querySelector('.modal-header');
+        const content = modal.querySelector('.modal-content');
+        if (header && content) {
+            header.style.cursor = 'move';
+            header.onpointerdown = (e) => {
+                if (e.button !== 0) return; // 좌클릭만 허용
+                const r = content.getBoundingClientRect();
+                const dx = e.clientX - r.left;
+                const dy = e.clientY - r.top;
+                // 드래그 시작 시 레이아웃 영향을 주는 margin/transform 제거
+                content.style.margin = '0';
+                content.style.transform = 'none';
+                content.style.position = 'fixed';
+                content.style.left = r.left + 'px';
+                content.style.top = r.top + 'px';
+                try { header.setPointerCapture(e.pointerId); } catch(_) {}
+                header.onpointermove = (ev) => {
+                    const nx = Math.max(0, Math.min(window.innerWidth - content.offsetWidth, (ev.clientX - dx)));
+                    const ny = Math.max(0, Math.min(window.innerHeight - content.offsetHeight, (ev.clientY - dy)));
+                    content.style.left = nx + 'px';
+                    content.style.top = ny + 'px';
+                };
+                header.onpointerup = () => {
+                    try { header.releasePointerCapture(e.pointerId); } catch(_) {}
+                    header.onpointermove = null;
+                    header.onpointerup = null;
+                };
+            };
+        }
+    } catch (_) {}
 
-    // 삭제 버튼 핸들러
+    // 삭제 버튼 핸들러 - 강제로 다시 연결
     if (deleteBtn) {
-        deleteBtn.onclick = () => {
-            if (!openRoadshowMeetingId) return;
-            if (!confirm('이 일정을 삭제할까요?')) return;
+        // 기존 이벤트 제거 후 새로 연결
+        deleteBtn.onclick = null;
+        deleteBtn.removeEventListener('click', deleteBtn._deleteHandler);
+        
+        const deleteHandler = () => {
+            console.log('삭제 버튼 클릭됨! ID:', openRoadshowMeetingId);
+            
+            if (!openRoadshowMeetingId) {
+                // 마지막 수단: 현재 폼의 day/time으로 추적 시도
+                const guessFund = (selectedFundId || null);
+                const guessDay = (m && m.dayId) || (document.querySelector('#roadshow-grid-body .slot-selecting')?.getAttribute('data-day-id')) || null;
+                const guessStart = startSel.value;
+                const fallback = (roadshowData.meetings || []).find(x => (x.fundId || null) === guessFund && x.dayId === guessDay && x.start === guessStart);
+                if (fallback) {
+                    openRoadshowMeetingId = fallback.id;
+                } else {
+                    alert('삭제할 일정을 찾을 수 없습니다.');
+                    return;
+                }
+            }
+            
+            if (!confirm('이 일정을 삭제하시겠습니까?\n\n삭제하면 스케줄 표와 투자자 테이블에서 모두 제거됩니다.')) return;
+            
+            console.log('일정 삭제 시작:', openRoadshowMeetingId);
+            
+            // 삭제 전에 미팅 정보를 미리 저장
+            const deletedMeeting = (roadshowData.meetings || []).find(x => x.id === openRoadshowMeetingId);
+            console.log('삭제할 미팅 정보:', deletedMeeting);
+            
+            // 미팅 삭제
+            const beforeCount = (roadshowData.meetings || []).length;
             roadshowData.meetings = (roadshowData.meetings || []).filter(x => x.id !== openRoadshowMeetingId);
+            const afterCount = roadshowData.meetings.length;
+            
+            console.log('삭제 전 미팅 수:', beforeCount, '삭제 후:', afterCount);
+            
+            // 관련 투자자 정보 정리 (해당 회사의 다른 미팅이 없으면 투자자 테이블에서도 제거)
+            if (deletedMeeting && deletedMeeting.company) {
+                const companyName = deletedMeeting.company.trim().toLowerCase();
+                const hasOtherMeetings = roadshowData.meetings.some(m => 
+                    m.company && m.company.trim().toLowerCase() === companyName
+                );
+                
+                console.log('삭제된 회사:', deletedMeeting.company, '다른 미팅 존재:', hasOtherMeetings);
+                
+                // 다른 미팅이 없으면 투자자 테이블에서도 제거
+                if (!hasOtherMeetings) {
+                    const beforeInvCount = (roadshowData.investors || []).length;
+                    roadshowData.investors = (roadshowData.investors || []).filter(inv => 
+                        inv.investor.trim().toLowerCase() !== companyName
+                    );
+                    const afterInvCount = roadshowData.investors.length;
+                    console.log('투자자 테이블에서도 제거:', beforeInvCount, '->', afterInvCount);
+                }
+            }
+            
+            // 데이터 저장 및 서버 동기화 + 즉시 렌더
             saveDataToLocalStorage();
-            renderRoadshow();
+            try { syncDataToServer(); } catch(_) {}
+            try { renderRoadshow(); } catch(_) {}
+            
+            // 모달 닫기
             closeRoadshowMeetingModal();
+            
+            // 안정화: 짧은 지연 후 강제 전체 재빌드(머지/rowspan 잔상 제거)
+            setTimeout(() => {
+                forceRebuildRoadshow();
+                console.log('삭제 완료 - 강제 재빌드');
+            }, 50);
         };
+        
+        deleteBtn._deleteHandler = deleteHandler;
+        deleteBtn.addEventListener('click', deleteHandler);
+        
+        console.log('삭제 버튼 핸들러 연결 완료:', deleteBtn);
     }
 
     form.onsubmit = (e) => {
@@ -4698,6 +4871,7 @@ function openRoadshowMeetingModal(opts = {}) {
             start: startSel.value,
             end: endSel.value,
             company: companyName,
+            type: (typeSelect && typeSelect.value) || '',
             note: noteInput.value.trim(),
             address: (addrInput.value.trim() || autoAddress),
             lpAttendees: (lpInput.value || '').split(',').map(s => s.trim()).filter(Boolean),
@@ -4710,7 +4884,7 @@ function openRoadshowMeetingModal(opts = {}) {
         } else {
             roadshowData.meetings.push({ id: 'meet_' + Date.now(), ...payload });
             // 드래그로 추가 저장 시, 회사명이 있으면 옆 테이블(Investor)에 자동 행 추가
-            ensureInvestorForCompany(payload.company, payload.fundId);
+            ensureInvestorForCompany(payload.company, payload.fundId, payload.type);
         }
         saveDataToLocalStorage();
         // 저장 직후, 같은 펀드의 Investor 표를 시간순으로 재정렬하기 위해 즉시 렌더
@@ -4742,14 +4916,50 @@ function updateRoadshowDatalists() {
     }
 }
 
-function ensureInvestorForCompany(company, fundId) {
+// 입력 폼 초기화 유틸(모달 닫힐 때 남아있던 입력 제거)
+function clearRoadshowFormInputs() {
+    try {
+        ['rs-company','rs-note','rs-address','rs-lp','rs-kb'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const typeSel = document.getElementById('rs-type');
+        if (typeSel) typeSel.value = '';
+    } catch (_) {}
+}
+
+function ensureInvestorForCompany(company, fundId, type) {
     const name = String(company || '').trim();
     if (!name) return;
     roadshowData.investors = roadshowData.investors || [];
-    const exists = roadshowData.investors.some(i => (i.fundId || null) === (fundId || null) && (i.investor || '').trim().toLowerCase() === name.toLowerCase());
-    if (exists) return;
+    
+    // 같은 펀드에서 같은 회사명이 있는지 확인
+    const existingIndex = roadshowData.investors.findIndex(i => 
+        (i.fundId || null) === (fundId || null) && 
+        (i.investor || '').trim().toLowerCase() === name.toLowerCase()
+    );
+    
+    if (existingIndex >= 0) {
+        // 기존 투자자 정보 업데이트 (type이 비어있었다면 새로 설정)
+        if (type && !roadshowData.investors[existingIndex].type) {
+            roadshowData.investors[existingIndex].type = type;
+        }
+        console.log('기존 투자자 정보 업데이트:', name);
+        return;
+    }
+    
+    // 새 투자자 추가
     const id = 'inv_' + Date.now();
-    roadshowData.investors.push({ id, fundId: fundId || null, investor: name, type: '', address: '', lpAttendees: '', kbSecurities: '' });
+    roadshowData.investors.push({ 
+        id, 
+        fundId: fundId || null, 
+        investor: name, 
+        type: type || '', 
+        address: '', 
+        lpAttendees: '', 
+        kbSecurities: '' 
+    });
+    console.log('새 투자자 추가:', name, 'fundId:', fundId, 'type:', type);
 }
 
 function attachRoadshowSlotEvents() {
@@ -4802,17 +5012,37 @@ function attachRoadshowSlotEvents() {
     };
 
     grid.querySelectorAll('.slot').forEach(td => {
-        // pointer events
-        td.addEventListener('pointerdown', (e) => { startDrag(td, e); window.addEventListener('pointermove', onPointerMove, true); });
+        const getCellMeeting = () => {
+            const fundCtx = (window.selectedFundId || null);
+            const dayId = td.getAttribute('data-day-id');
+            const time = td.getAttribute('data-time');
+            return (roadshowData.meetings || []).find(m => (m.fundId || null) === fundCtx && m.dayId === dayId && timeGte(time, m.start) && timeLte(time, (m.end || m.start)));
+        };
+
+        // pointer events: 예약된 셀에서는 드래그 시작 금지
+        td.addEventListener('pointerdown', (e) => {
+            if (td.classList.contains('reserved') || getCellMeeting()) return;
+            startDrag(td, e);
+            window.addEventListener('pointermove', onPointerMove, true);
+        });
         td.addEventListener('pointerenter', () => moveDrag(td));
         // mouse fallback
-        td.addEventListener('mousedown', (e) => { startDrag(td, e); window.addEventListener('mousemove', onPointerMove, true); });
+        td.addEventListener('mousedown', (e) => {
+            if (td.classList.contains('reserved') || getCellMeeting()) return;
+            startDrag(td, e);
+            window.addEventListener('mousemove', onPointerMove, true);
+        });
         td.addEventListener('mouseenter', () => moveDrag(td));
         td.addEventListener('click', () => {
             if (dragging) return;
             const dayId = td.getAttribute('data-day-id');
             const start = td.getAttribute('data-time');
-            openRoadshowMeetingModal({ dayId, start });
+            const mAt = getCellMeeting();
+            if (mAt) {
+                openRoadshowMeetingModal({ id: mAt.id });
+            } else {
+                openRoadshowMeetingModal({ dayId, start });
+            }
         });
     });
 
@@ -4850,29 +5080,21 @@ function buildHalfHourTimes() {
 function renderMeetingAt(dayId, start) {
     const m = (roadshowData.meetings || []).find(x => x.dayId === dayId && x.start === start);
     if (!m) return '';
-    const label = escapeHtml(m.company || '');
-    return `<div class="merged-content" onclick="event.stopPropagation(); openRoadshowMeetingModal({ id: '${m.id}' })">${label}</div>`;
+    const label = escapeHtml((m.company || '').trim());
+    return `<div class="merged-content" data-meeting-id="${m.id}" onclick="event.stopPropagation(); openRoadshowMeetingModal({ id: '${m.id}' })">${label}</div>`;
 }
 
 function renderGridCell(dayId, time) {
     const fundCtx = (window.selectedFundId || null);
-    const meeting = (roadshowData.meetings || []).find(m => (m.fundId || null) === fundCtx && m.dayId === dayId && timeGte(time, m.start) && timeLte(time, (m.end || m.start)));
+    // 시작 셀 기준으로만 렌더: rowspan 병합으로 중복 렌더 방지
+    const meeting = (roadshowData.meetings || []).find(m => (m.fundId || null) === fundCtx && m.dayId === dayId && m.start === time);
     if (!meeting) {
         return `<td class=\"slot\" data-day-id=\"${dayId}\" data-time=\"${time}\"></td>`;
     }
     // range 계산
     const [s,e] = orderTimes(meeting.start, meeting.end || meeting.start);
-    const isStart = time === s;
-    const isInside = timeGte(time, s) && timeLte(time, e);
-    const baseClass = isInside ? 'slot reserved merged' : 'slot';
-    // 시작 셀에만 콘텐츠 표시, 나머지는 빈 셀로 유지
-    if (isStart) {
-        const rowSpan = Math.max(1, (timeToMinutes(e) - timeToMinutes(s)) / 30);
-        return `<td class=\"${baseClass}\" data-day-id=\"${dayId}\" data-time=\"${time}\" rowspan=\"${rowSpan}\">${renderMeetingAt(dayId, s)}</td>`;
-    } else {
-        // 병합에 의해 실제 DOM에는 생성되지 않도록 빈 문자열 반환
-        return '';
-    }
+    const rowSpan = Math.max(1, (timeToMinutes(e) - timeToMinutes(s)) / 30);
+    return `<td class=\"slot reserved merged\" data-day-id=\"${dayId}\" data-time=\"${s}\" rowspan=\"${rowSpan}\">${renderMeetingAt(dayId, s)}</td>`;
 }
 
 function addRoadshowDay() {
@@ -4986,14 +5208,24 @@ function deleteRoadshowInvestor(id) {
     saveDataToLocalStorage();
     
     // UI 재렌더 및 즉시 서버 동기화
-    renderRoadshow();
+    try { renderRoadshow(); } catch(_) {}
+    setTimeout(() => { try { renderRoadshow(); } catch(_) {} }, 30);
     syncDataToServer();
 }
 
 function closeRoadshowMeetingModal() {
     const modal = document.getElementById('roadshow-meeting-modal');
     if (modal) modal.style.display = 'none';
+    try { if (window.__rsEscHandler) { document.removeEventListener('keydown', window.__rsEscHandler, true); window.__rsEscHandler = null; } } catch(_) {}
     openRoadshowMeetingId = null;
+    
+    // 모달 닫을 때 그리드 완전 재렌더링으로 초록색 영역 완전 정리
+    setTimeout(() => {
+        // 기존 그리드 완전 초기화
+        forceRebuildRoadshow();
+        clearRoadshowFormInputs();
+        console.log('모달 닫힘 - 강제 재빌드 & 폼 초기화');
+    }, 50);
 }
 
 // 초기 렌더 진입점: 대시보드 진입 시 호출됨
@@ -5007,6 +5239,27 @@ function closeRoadshowMeetingModal() {
         if (d === 'roadshow') setTimeout(renderRoadshow, 0);
     };
 })();
+
+// 안전 가드: 특정 대시보드가 활성일 때만 렌더를 트리거하는 헬퍼가 누락된 경우를 대비
+if (typeof window.renderIfActive !== 'function') {
+    window.renderIfActive = function(elementId, renderFn) {
+        try {
+            const el = document.getElementById(elementId);
+            if (el) { renderFn(); }
+        } catch (_) {}
+    };
+}
+
+// 강제 전체 재빌드: 그리드 머지/rowspan 잔상 제거용
+function forceRebuildRoadshow() {
+    try {
+        const head = document.getElementById('roadshow-grid-head');
+        const body = document.getElementById('roadshow-grid-body');
+        if (head) head.innerHTML = '';
+        if (body) body.innerHTML = '';
+    } catch (_) {}
+    try { renderRoadshow(); } catch (_) {}
+}
 
 // Firestore → 로컬 → RTDB 복구
 async function restoreFromFirestore() {

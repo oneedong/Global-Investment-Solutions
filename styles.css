@@ -1527,8 +1527,8 @@ body {
     top: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0,0,0,0.5);
-    backdrop-filter: blur(5px);
+    background-color: transparent; /* 배경 흐림 제거 */
+    backdrop-filter: none; /* 블러 제거 */
 }
 
 .modal-content {
@@ -1540,6 +1540,7 @@ body {
     max-width: 500px;
     box-shadow: 0 20px 40px rgba(0,0,0,0.2);
     animation: modalSlideIn 0.3s ease;
+    cursor: move; /* 드래그 가능 시 시각적 피드백 */
 }
 
 @keyframes modalSlideIn {
@@ -1565,7 +1566,8 @@ body {
 
 .modal-header h3 {
     color: #495057;
-    font-size: 1.3rem;
+    font-size: 1.1rem; /* 다른 폰트 크기와 통일 */
+    font-weight: 600;
 }
 
 .close {
@@ -2583,6 +2585,7 @@ select option { text-align: center; }
 .slot { position: relative; cursor: pointer; transition: background 0.15s ease; }
 .slot:hover { background: #f8f9ff; }
 .slot.slot-selecting { background: #e6f2ff; }
+.slot.removed { background: transparent !important; }
 .slot.reserved { background: #e8f7e4; } /* 연한 연두색 */
 .slot.merged { text-align: center; font-weight: 700; color: #1b5e20; }
 .slot .merged-content { display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; padding: 4px 6px; }

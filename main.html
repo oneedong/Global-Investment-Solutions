@@ -349,16 +349,13 @@
                           <span class="value" id="institutions-total-count">0</span>
                       </div>
                       
-                      <!-- 분류 방식 선택 -->
+                      <!-- 보기 전환: 테이블 관리 / 전체 지도 -->
                       <div class="grouping-options">
-                          <button class="grouping-btn active" id="category-grouping" onclick="switchGrouping('category')">
-                              <i class="fas fa-tags"></i> 카테고리별
+                          <button class="grouping-btn active" id="institutions-table-view" onclick="switchInstitutionsView('table')">
+                              <i class="fas fa-table"></i> 테이블
                           </button>
-                          <button class="grouping-btn" id="region-grouping" onclick="switchGrouping('region')">
-                              <i class="fas fa-map-marker-alt"></i> 지역별
-                          </button>
-                          <button class="grouping-btn" id="region-all-grouping" onclick="switchGrouping('regionAll')">
-                              <i class="fas fa-layer-group"></i> 지역별(전체)
+                          <button class="grouping-btn" id="institutions-map-view" onclick="switchInstitutionsView('map')">
+                              <i class="fas fa-map"></i> 지도
                           </button>
                       </div>
                       
@@ -366,16 +363,7 @@
                           <!-- 카테고리들이 여기에 동적으로 추가됩니다 -->
                       </ul>
                       
-                      <ul id="institutions-region-list" class="category-list" style="display: none;">
-                          <!-- 지역별 그룹이 여기에 동적으로 추가됩니다 -->
-                      </ul>
-                      
-                      <!-- 지도 보기 버튼 -->
-                      <div class="map-view-option" style="margin-top: 16px;">
-                          <button class="map-view-btn" id="map-view-btn" onclick="toggleMapView()">
-                              <i class="fas fa-map"></i> 지도로 보기
-                          </button>
-                      </div>
+                      <!-- 지역 리스트/별도 지도 토글 UI 제거 -->
                   </div>
                                       <div class="institutions-detail">
                         <div class="detail-header">
@@ -540,6 +528,18 @@
                               <input type="text" id="rs-company" list="rs-company-datalist" placeholder="기관명(LP/GP)" />
                               <datalist id="rs-company-datalist"></datalist>
                           </div>
+                          <div class="form-group">
+                              <label>기관유형:</label>
+                              <select id="rs-type">
+                                  <option value="">선택</option>
+                                  <option value="a">a</option>
+                                  <option value="b">b</option>
+                                  <option value="c">c</option>
+                                  <option value="d">d</option>
+                                  <option value="e">e</option>
+                                  <option value="f">f</option>
+                              </select>
+                          </div>
                           <!-- Staff removed; contact is managed via investor tables -->
                           <div class="form-group">
                               <label>참고사항:</label>
@@ -558,7 +558,7 @@
                               <input type="text" id="rs-kb" placeholder="콤마로 구분" />
                           </div>
                           <div class="form-actions" style="text-align:right; display:flex; gap:8px; justify-content:flex-end;">
-                              <button type="button" id="rs-delete-btn" class="btn-secondary" style="display:none; background:#dc3545;">삭제</button>
+                              <button type="button" id="rs-delete-btn" class="btn-secondary" style="background:#dc3545; color:white; border:1px solid #dc3545; font-weight:bold;">삭제</button>
                               <button type="button" class="btn-secondary" onclick="closeRoadshowMeetingModal()">취소</button>
                               <button type="submit" class="btn-primary">저장</button>
                           </div>
@@ -667,6 +667,9 @@
       
       <!-- Firebase 설정 -->
       <script src="firebase-config.js"></script>
+      
+      <!-- Kakao Maps SDK (services, clusterer 포함) -->
+      <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=f0333d8d20f4441c406a2fdbb47baf5a&libraries=services,clusterer"></script>
       
       <script src="script.js"></script>
   </div>
